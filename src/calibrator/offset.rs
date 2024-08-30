@@ -24,6 +24,8 @@ impl OffsetMethod {
             spinner: None,
         }
     }
+    //FIXME
+    #[allow(dead_code)]
     pub fn new(
         a: usize,
         b: usize,

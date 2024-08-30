@@ -2,12 +2,12 @@ use std::{collections::HashMap, thread, time::Duration};
 
 use calibrator::{Calibrator, SampledMethod, StepResult};
 use clap::{Command, FromArgMatches, Subcommand};
-use common::{CalibratorData, Device};
+use common::{vec3, CalibratorData, Device, UNIT};
 use env_logger::Env;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
 use libmonado_rs as mnd;
-use nalgebra::{Quaternion, UnitQuaternion};
+use nalgebra::{Quaternion, Rotation3, UnitQuaternion};
 use openxr as xr;
 use transformd::TransformD;
 
@@ -121,6 +121,37 @@ fn handle_non_xr_subcommands(
                 match to.set_offset(TransformD::default().into()) {
                     Ok(_) => println!("{} has been reset.", to.name),
                     Err(e) => println!("Could not reset due to libmonado error: {:?}", e),
+                }
+                break;
+            }
+            Ok(true)
+        }
+        Subcommands::Adjust {
+            id,
+            relative,
+            yaw,
+            x,
+            y,
+            z,
+        } => {
+            for to in monado.tracking_origins()?.into_iter() {
+                if to.id != *id {
+                    continue;
+                }
+
+                let mut offset = if *relative {
+                    to.get_offset()?.into()
+                } else {
+                    TransformD::default()
+                };
+
+                offset.origin += vec3(x.unwrap_or(0.0), y.unwrap_or(0.0), z.unwrap_or(0.0));
+                offset.basis =
+                    Rotation3::from_axis_angle(&UNIT.YU, yaw.unwrap_or(0.0)) * offset.basis;
+
+                match to.set_offset(offset.into()) {
+                    Ok(_) => println!("{} has been adjusted.", to.name),
+                    Err(e) => println!("Could not adjust due to libmonado error: {:?}", e),
                 }
                 break;
             }
@@ -422,6 +453,32 @@ enum Subcommands {
         /// number of samples to use for initial calibration. default: 500
         #[arg(long)]
         samples: Option<u32>,
+    },
+    /// Manually adjust the offset of the given tracking origin
+    Adjust {
+        /// tracking origin ID from `motoc show`
+        #[arg(value_name = "ORIGIN")]
+        id: u32,
+
+        /// apply a relative offset instead of overriding the existing one
+        #[arg(short, long)]
+        relative: bool,
+
+        /// rotation offset, positive is clockwise
+        #[arg(long, value_name = "DEGREES")]
+        yaw: Option<f64>,
+
+        /// position offset
+        #[arg(long, value_name = "METERS")]
+        x: Option<f64>,
+
+        /// position offset
+        #[arg(long, value_name = "METERS")]
+        y: Option<f64>,
+
+        /// position offset
+        #[arg(long, value_name = "METERS")]
+        z: Option<f64>,
     },
     /// Reset the offset for the given tracking origin.
     Reset {
