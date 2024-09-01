@@ -1,7 +1,16 @@
+use std::{
+    f64::consts::PI,
+    time::{Duration, Instant},
+};
+
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use nalgebra::{Rotation3, Vector3};
 
-use crate::{helpers_xr::SpaceLocationConvert, transformd::TransformD};
+use crate::{
+    common::UNIT,
+    helpers_xr::{EffectiveSpaceVelocity, SpaceLocationConvert},
+    transformd::TransformD,
+};
 
 use super::{Calibrator, StepResult};
 
@@ -12,6 +21,7 @@ pub struct OffsetMethod {
     target_offset: TransformD,
     lerp_factor: f64,
     spinner: Option<ProgressBar>,
+    anomaly_start: Option<Instant>,
 }
 
 impl OffsetMethod {
@@ -22,10 +32,9 @@ impl OffsetMethod {
             target_offset: offset,
             lerp_factor,
             spinner: None,
+            anomaly_start: None,
         }
     }
-    //FIXME
-    #[allow(dead_code)]
     pub fn new(
         a: usize,
         b: usize,
@@ -48,6 +57,7 @@ impl OffsetMethod {
             },
             lerp_factor,
             spinner: None,
+            anomaly_start: None,
         }
     }
 }
@@ -81,16 +91,15 @@ impl Calibrator for OffsetMethod {
     }
 
     fn step(&mut self, data: &mut crate::common::CalibratorData) -> anyhow::Result<StepResult> {
-        let [Ok(pose_a), Ok(pose_b)] = [
-            data.devices[self.device_a]
-                .space
-                .locate(&data.stage, data.now)?
-                .into_transformd(),
-            data.devices[self.device_b]
-                .space
-                .locate(&data.stage, data.now)?
-                .into_transformd(),
-        ] else {
+        let (a_loc, a_vel) = data.devices[self.device_a]
+            .space
+            .relate(&data.stage, data.now)?;
+
+        let (b_loc, b_vel) = data.devices[self.device_b]
+            .space
+            .relate(&data.stage, data.now)?;
+
+        let [Ok(pose_a), Ok(pose_b)] = [a_loc.into_transformd(), b_loc.into_transformd()] else {
             if let Some(spinner) = self.spinner.as_mut() {
                 spinner.set_message("Device(s) not tracking.");
                 spinner.tick();
@@ -98,23 +107,82 @@ impl Calibrator for OffsetMethod {
             return Ok(StepResult::Continue);
         };
 
+        // 0.25 m/s or 35 deg/s
+        if a_vel.effective_linear().norm_squared() > 0.5
+            || b_vel.effective_linear().norm_squared() > 0.5
+            || a_vel.effective_angular().norm_squared() > 0.6
+            || b_vel.effective_angular().norm_squared() > 0.6
+        {
+            if let Some(spinner) = self.spinner.as_mut() {
+                spinner.set_message("Device(s) moving too fast.");
+                spinner.tick();
+            }
+            return Ok(StepResult::Continue);
+        }
+
+        let target_a = pose_b * self.target_offset;
+
+        // TODO: implement rotation in a smarter way?
+        //
+        // let deviation_local = target_a.inverse() * pose_a;
+        // let deviation_global = target_a.direction() * deviation_local;
+
+        let to_b = data.get_device_origin(self.device_b)?;
+        let root_b = TransformD::from(to_b.get_offset()?);
+
+        // If user is looking far up/down, use the right unit vector as reference
+        let ref_dir = if UNIT.YU.dot(&(pose_a.basis * UNIT.ZU)).abs() < 0.9 {
+            UNIT.ZU
+        } else {
+            UNIT.XU
+        };
+
+        let v1 = target_a.basis * ref_dir;
+        let v2 = pose_a.basis * ref_dir;
+
+        let angle_y = match v2.x.atan2(v2.z) - v1.x.atan2(v1.z) {
+            a if a > PI => a - 2. * PI,
+            a if a < -PI => a + 2. * PI,
+            a => a,
+        };
+
+        let pos_offset = root_b.origin - (target_a.origin - pose_a.origin);
+
+        // devices are more than 100m apart → anomaly
+        if pos_offset.norm_squared() > 10000.0 {
+            if let Some(spinner) = self.spinner.as_mut() {
+                // Tracker flew away
+                spinner.set_message("Anomaly detected...");
+                spinner.tick();
+            }
+
+            // anomaly doesn't disappear within 5s → reset offset
+            match self.anomaly_start {
+                Some(time) => {
+                    if time.elapsed() > Duration::from_secs(5) {
+                        log::info!("Tracking anomaly detected. Restarting from scratch.");
+                        to_b.set_offset(TransformD::default().into())?;
+                        self.anomaly_start = Some(Instant::now());
+                    }
+                }
+                None => {
+                    self.anomaly_start = Some(Instant::now());
+                }
+            }
+
+            return Ok(StepResult::Continue);
+        } else {
+            self.anomaly_start = None;
+        }
+
         if let Some(spinner) = self.spinner.as_mut() {
             spinner.set_message("Offset mode active.");
             spinner.tick();
         }
 
-        let target_a = pose_b * self.target_offset;
-
-        // TODO: fix rotation
-        //let deviation_local = target_a.inverse() * pose_a;
-        //let deviation_global = target_a.direction() * deviation_local;
-
-        let to_b = data.get_device_origin(self.device_b)?;
-        let root_b = TransformD::from(to_b.get_offset()?);
-
         let offset = TransformD {
             origin: root_b.origin - (target_a.origin - pose_a.origin).scale(self.lerp_factor),
-            basis: root_b.basis,
+            basis: Rotation3::from_axis_angle(&UNIT.YU, angle_y * self.lerp_factor) * root_b.basis,
         };
 
         to_b.set_offset(offset.into())?;

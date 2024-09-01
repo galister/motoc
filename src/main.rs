@@ -1,8 +1,8 @@
 use std::{collections::HashMap, thread, time::Duration};
 
-use calibrator::{Calibrator, SampledMethod, StepResult};
+use calibrator::{Calibrator, OffsetMethod, SampledMethod, StepResult};
 use clap::{Command, FromArgMatches, Subcommand};
-use common::{vec3, CalibratorData, Device, UNIT};
+use common::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use env_logger::Env;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
@@ -203,9 +203,7 @@ fn xr_loop(
 
                         let mut data = load_calibrator_data(&session, &mndx, &monado)?;
 
-                        #[allow(clippy::single_match)] // TODO: fix offset mode
                         match subcommands {
-                            /*
                             Subcommands::Offset {
                                 ref src,
                                 ref dst,
@@ -237,22 +235,18 @@ fn xr_loop(
                                     let mut c = OffsetMethod::new(
                                         src_dev,
                                         dst_dev,
-                                        Vector3::new(
+                                        vec3(
                                             pitch.unwrap_or(0.0),
                                             yaw.unwrap_or(0.0),
                                             roll.unwrap_or(0.0),
                                         ),
-                                        Vector3::new(
-                                            x.unwrap_or(0.0),
-                                            y.unwrap_or(0.0),
-                                            z.unwrap_or(0.0),
-                                        ),
+                                        vec3(x.unwrap_or(0.0), y.unwrap_or(0.0), z.unwrap_or(0.0)),
                                         lerp.unwrap_or(0.05),
                                     );
                                     c.init(&mut data, &mut status)?;
                                     c
                                 }));
-                            } */
+                            }
                             Subcommands::Calibrate {
                                 ref src,
                                 ref dst,
@@ -285,6 +279,59 @@ fn xr_loop(
                                     c.init(&mut data, &mut status)?;
                                     c
                                 }));
+                            }
+                            Subcommands::Continue => {
+                                let last = data.load_calibration()?;
+
+                                match last.offset_type {
+                                    OffsetType::TrackingOrigin => {
+                                        for o in data.tracking_origins.iter() {
+                                            if o.name != last.dst {
+                                                continue;
+                                            }
+
+                                            let offset =
+                                                last.offset * TransformD::from(o.get_offset()?);
+                                            o.set_offset(offset.into())?;
+                                            log::info!(
+                                                "Offset successfully applied to: {}",
+                                                last.dst
+                                            );
+                                            break 'main_loop;
+                                        }
+                                        log::error!("No such tracking origin: {}", last.dst);
+                                    }
+                                    OffsetType::Device => {
+                                        let Some(src_idx) =
+                                            data.devices.iter().position(|d| d.serial == last.src)
+                                        else {
+                                            log::error!("No such device: {}", last.src);
+                                            break 'main_loop;
+                                        };
+
+                                        let Some(dst_idx) =
+                                            data.devices.iter().position(|d| d.serial == last.dst)
+                                        else {
+                                            log::error!("No such device: {}", last.src);
+                                            break 'main_loop;
+                                        };
+
+                                        log::info!(
+                                            "Starting continous mode from previous calibration."
+                                        );
+
+                                        calibrator = Some(Box::new({
+                                            let mut c = OffsetMethod::new_internal(
+                                                src_idx,
+                                                dst_idx,
+                                                last.offset,
+                                                0.02,
+                                            );
+                                            c.init(&mut data, &mut status)?;
+                                            c
+                                        }));
+                                    }
+                                }
                             }
                             _ => {}
                         }
@@ -395,8 +442,6 @@ fn load_calibrator_data<'a, G>(
 enum Subcommands {
     /// Show available tracking origings and their devices
     Show,
-
-    /*
     /// Maintain a static offset between two devices
     Offset {
         /// the source device (usu. HMD)
@@ -435,7 +480,6 @@ enum Subcommands {
         #[arg(long, value_name = "FACTOR")]
         lerp: Option<f64>,
     },
-    */
     /// Calibrate by sampling two devices that move together over time
     Calibrate {
         /// the source device (usu. HMD)
@@ -486,4 +530,6 @@ enum Subcommands {
         #[arg(value_name = "ORIGIN")]
         id: u32,
     },
+    /// Load a previous calibration. If last calibration was not continous; apply once and exit.
+    Continue,
 }

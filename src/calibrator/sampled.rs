@@ -7,6 +7,7 @@ use nalgebra::{
 
 use crate::{
     calibrator::{OffsetMethod, StepResult},
+    common::OffsetType,
     helpers_xr::SpaceLocationConvert,
     transformd::TransformD,
 };
@@ -299,6 +300,13 @@ impl Calibrator for SampledMethod {
         if self.maintain {
             let offset = self.avg_b_to_a_offset(offset);
 
+            match data.save_calibration(self.src_dev, self.dst_dev, offset, OffsetType::Device) {
+                Ok(_) => log::info!(
+                    "Saved calibration. Use `motoc continue` on next startup to use this."
+                ),
+                Err(e) => log::warn!("Could not save calibration: {}", e),
+            }
+
             Ok(StepResult::Replace(Box::new(OffsetMethod::new_internal(
                 self.src_dev,
                 self.dst_dev,
@@ -306,6 +314,19 @@ impl Calibrator for SampledMethod {
                 0.02,
             ))))
         } else {
+            let src_origin = data.get_device_origin(self.src_dev)?;
+            match data.save_calibration(
+                src_origin.id as _,
+                dst_origin.id as _,
+                offset,
+                OffsetType::TrackingOrigin,
+            ) {
+                Ok(_) => log::info!(
+                    "Saved calibration. Use `motoc continue` on next startup to use this."
+                ),
+                Err(e) => log::warn!("Could not save calibration: {}", e),
+            }
+
             Ok(StepResult::End)
         }
     }

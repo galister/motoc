@@ -1,3 +1,4 @@
+use nalgebra::Vector3;
 use openxr::{self as xr};
 
 use crate::{mndx, transformd::TransformD};
@@ -72,5 +73,36 @@ impl SpaceLocationConvert for xr::SpaceLocation {
         }
 
         Ok(self.pose.into())
+    }
+}
+
+pub trait EffectiveSpaceVelocity {
+    fn effective_angular(&self) -> Vector3<f32>;
+    fn effective_linear(&self) -> Vector3<f32>;
+}
+
+impl EffectiveSpaceVelocity for xr::SpaceVelocity {
+    fn effective_angular(&self) -> Vector3<f32> {
+        if self
+            .velocity_flags
+            .intersects(xr::SpaceVelocityFlags::ANGULAR_VALID)
+        {
+            let v32: mint::Vector3<f32> = self.angular_velocity.into();
+            v32.into()
+        } else {
+            Vector3::zeros()
+        }
+    }
+
+    fn effective_linear(&self) -> Vector3<f32> {
+        if self
+            .velocity_flags
+            .intersects(xr::SpaceVelocityFlags::LINEAR_VALID)
+        {
+            let v32: mint::Vector3<f32> = self.linear_velocity.into();
+            v32.into()
+        } else {
+            Vector3::zeros()
+        }
     }
 }

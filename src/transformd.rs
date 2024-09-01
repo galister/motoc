@@ -3,8 +3,9 @@ use std::fmt::Display;
 use libmonado_rs as mnd;
 use nalgebra::{Quaternion, Rotation3, UnitQuaternion, Vector3};
 use openxr as xr;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct TransformD {
     pub basis: Rotation3<f64>,
     pub origin: Vector3<f64>,

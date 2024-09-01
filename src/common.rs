@@ -1,8 +1,11 @@
-use std::sync::LazyLock;
+use std::{fs::File, sync::LazyLock};
 
 use libmonado_rs as mnd;
 use nalgebra::{UnitVector3, Vector3};
 use openxr as xr;
+use serde::{Deserialize, Serialize};
+
+use crate::transformd::TransformD;
 
 #[inline(always)]
 #[allow(dead_code)]
@@ -71,7 +74,70 @@ impl<'a> CalibratorData<'a> {
         let Some(origin) = self.tracking_origins.get(device.tracking_origin as usize) else {
             anyhow::bail!("no such tracking origin: {}", device.tracking_origin);
         };
-
         Ok(origin.clone())
     }
+
+    pub fn save_calibration(
+        &self,
+        src: usize,
+        dst: usize,
+        offset: TransformD,
+        offset_type: OffsetType,
+    ) -> anyhow::Result<()> {
+        let xdg_dirs = xdg::BaseDirectories::new()?;
+        let mut path = xdg_dirs.get_config_home();
+        path.push("motoc");
+        if !path.exists() {
+            std::fs::create_dir_all(&path)?;
+        }
+        path.push("last.json");
+
+        let (src_name, dst_name) = match offset_type {
+            OffsetType::TrackingOrigin => (
+                self.tracking_origins[src].name.clone(),
+                self.tracking_origins[dst].name.clone(),
+            ),
+            OffsetType::Device => (
+                self.devices[src].serial.clone(),
+                self.devices[dst].serial.clone(),
+            ),
+        };
+
+        let data = SavedCalibration {
+            offset_type,
+            src: src_name,
+            dst: dst_name,
+            offset,
+        };
+
+        let f = File::create(path)?;
+        serde_json::to_writer(f, &data)?;
+        Ok(())
+    }
+
+    pub fn load_calibration(&self) -> anyhow::Result<SavedCalibration> {
+        let xdg_dirs = xdg::BaseDirectories::new()?;
+        let mut path = xdg_dirs.get_config_home();
+        path.push("motoc/last.json");
+
+        let f = File::open(path)?;
+        let data: SavedCalibration = serde_json::from_reader(f)?;
+        Ok(data)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum OffsetType {
+    /// Used for one-shot calibration
+    TrackingOrigin,
+    /// Used for offset/continous mode
+    Device,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SavedCalibration {
+    pub offset_type: OffsetType,
+    pub src: String,
+    pub dst: String,
+    pub offset: TransformD,
 }

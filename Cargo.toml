@@ -13,13 +13,14 @@ indicatif-log-bridge = "0.2.3"
 libmonado-rs = { git = "https://github.com/galister/libmonado-rs.git", rev = "57bc1575b8dc0f78440bf60c3c2c4a9caa6dcf47" }
 log = "0.4.22"
 mint = { version = "0.5.9", features = ["serde"] }
-nalgebra = { version = "0.33.0", features = ["mint"] }
+nalgebra = { version = "0.33.0", features = ["mint", "serde-serialize"] }
 openxr = { git = "https://github.com/Ralith/openxrs.git", rev = "6c7747aee678048642dc16aad8bab3d6961dce03", features = [
   "linked",
   "mint",
 ], default-features = false }
 serde = { version = "1.0.209", features = ["derive"] }
 serde_json = "1.0.127"
+xdg = "2.5.2"
 
 [build-dependencies]
 bindgen = "0.70.1"
