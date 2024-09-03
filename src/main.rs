@@ -312,7 +312,7 @@ fn xr_loop(
                                         let Some(dst_idx) =
                                             data.devices.iter().position(|d| d.serial == last.dst)
                                         else {
-                                            log::error!("No such device: {}", last.src);
+                                            log::error!("No such device: {}", last.dst);
                                             break 'main_loop;
                                         };
 
