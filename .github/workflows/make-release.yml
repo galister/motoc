@@ -1,0 +1,43 @@
+name: Make Release
+
+on:
+  push:
+    tags:
+      - 'v**'
+
+jobs:
+  make_release:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Prepare Environment
+        run: |
+          sudo apt install libopenxr-dev
+          rustup update stable
+          
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_KEY }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Motoc ${{ github.ref_name }}
+          draft: true
+          prerelease: false
+
+      - name: Cargo Build
+        run: |
+          cargo build --release
+          chmod +x target/release/motoc
+
+      - name: Upload
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_KEY }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./target/release/motoc
+          asset_name: motoc
+          asset_content_type: application/octet-stream
