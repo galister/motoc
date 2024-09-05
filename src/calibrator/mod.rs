@@ -1,7 +1,9 @@
+mod monitor;
 mod offset;
 mod sampled;
 
 use indicatif::MultiProgress;
+pub use monitor::Monitor;
 pub use offset::OffsetMethod;
 pub use sampled::SampledMethod;
 

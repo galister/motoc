@@ -10,7 +10,7 @@ colored = "2.1.0"
 env_logger = "0.11.5"
 indicatif = "0.17.8"
 indicatif-log-bridge = "0.2.3"
-libmonado-rs = { git = "https://github.com/galister/libmonado-rs.git", rev = "57bc1575b8dc0f78440bf60c3c2c4a9caa6dcf47" }
+libmonado-rs = { git = "https://github.com/technobaboo/libmonado-rs.git", rev = "8982759c936ddf3d0fffc96ec404bfe53971276d" }
 log = "0.4.22"
 mint = { version = "0.5.9", features = ["serde"] }
 nalgebra = { version = "0.33.0", features = ["mint", "serde-serialize"] }

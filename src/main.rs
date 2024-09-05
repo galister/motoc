@@ -1,6 +1,6 @@
 use std::{collections::HashMap, thread, time::Duration};
 
-use calibrator::{Calibrator, OffsetMethod, SampledMethod, StepResult};
+use calibrator::{Calibrator, Monitor, OffsetMethod, SampledMethod, StepResult};
 use clap::{Command, FromArgMatches, Subcommand};
 use common::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use env_logger::Env;
@@ -39,7 +39,7 @@ fn main() {
         return;
     };
 
-    let required_libmonado_version = mnd::Version::new(1, 3, 1);
+    let required_libmonado_version = mnd::Version::new(1, 4, 0);
     let libmonado_version = monado.get_api_version();
     if libmonado_version < required_libmonado_version {
         log::error!("Your libmonado API version is not supported.");
@@ -204,6 +204,13 @@ fn xr_loop(
                         let mut data = load_calibrator_data(&session, &mndx, &monado)?;
 
                         match subcommands {
+                            Subcommands::Monitor => {
+                                calibrator = Some(Box::new({
+                                    let mut c = Monitor::new();
+                                    c.init(&mut data, &mut status)?;
+                                    c
+                                }));
+                            }
                             Subcommands::Offset {
                                 ref src,
                                 ref dst,
@@ -442,6 +449,8 @@ fn load_calibrator_data<'a, G>(
 enum Subcommands {
     /// Show available tracking origings and their devices
     Show,
+    /// Continuously monitor tracking origins and their devices
+    Monitor,
     /// Maintain a static offset between two devices
     Offset {
         /// the source device (usu. HMD)
