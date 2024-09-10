@@ -125,7 +125,7 @@ impl Calibrator for Monitor {
                     let v32: mint::Vector3<f32> = vel.linear_velocity.into();
                     let linear: Vector3<f32> = v32.into();
                     let speed = linear.norm();
-                    let ticks = (speed / 3.0 * 20.0) as usize;
+                    let ticks = (speed / 3.0 * 20.0).clamp(0., 20.) as usize;
                     println!(
                         "[{}{}] {:.2} m/s",
                         "=".repeat(ticks).color(Color::Red),
@@ -145,7 +145,7 @@ impl Calibrator for Monitor {
                     let v32: mint::Vector3<f32> = vel.angular_velocity.into();
                     let angular: Vector3<f32> = v32.into();
                     let spin = angular.norm();
-                    let ticks = (spin / (2.0 * PI) * 20.0) as usize;
+                    let ticks = (spin / PI * 5.0).clamp(0., 20.) as usize;
                     println!(
                         "[{}{}] {:.2} rad/s",
                         "=".repeat(ticks).color(Color::Red),
