@@ -1,12 +1,18 @@
-use std::{collections::HashMap, thread, time::Duration};
+use std::{
+    collections::HashMap,
+    env,
+    process::{Command, ExitCode, Stdio},
+    thread,
+    time::Duration,
+};
 
 use calibrator::{Calibrator, Monitor, OffsetMethod, SampledMethod, StepResult};
-use clap::{Command, FromArgMatches, Subcommand};
+use clap::Parser;
 use common::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use env_logger::Env;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use libmonado_rs as mnd;
+use libmonado_rs::{self as mnd};
 use nalgebra::{Quaternion, Rotation3, UnitQuaternion};
 use openxr as xr;
 use transformd::TransformD;
@@ -20,23 +26,27 @@ mod transformd;
 #[cfg(test)]
 mod test;
 
-fn main() {
+fn main() -> ExitCode {
     let log = env_logger::Builder::from_env(Env::default().default_filter_or("info")).build();
     let status = MultiProgress::new();
     LogWrapper::new(status.clone(), log).try_init().unwrap();
 
-    let main = Command::new(env!("CARGO_PKG_NAME"))
-        .about("Monado Tracking Origin Calibrator")
-        .version(env!("CARGO_PKG_VERSION"));
+    let args = Args::parse();
 
-    let mut args = Subcommands::augment_subcommands(main.clone());
-    let Ok(subcommands) = Subcommands::from_arg_matches(&args.clone().get_matches()) else {
-        let _ = args.print_long_help();
-        return;
-    };
+    if args.wait {
+        log::info!("Waiting for Monado to become reachable...");
+        wait_monado();
+    }
 
     let Ok(monado) = mnd::Monado::auto_connect() else {
-        return;
+        if !args.wait {
+            log::error!("Monado is not reachable.");
+
+            let cmd = env::args().skip(1).fold(String::new(), |a, b| a + " " + &b);
+            log::error!("Want to wait until Monado is available?");
+            log::error!("Try: motoc --wait{}", cmd);
+        }
+        return ExitCode::from(2);
     };
 
     let required_libmonado_version = mnd::Version::new(1, 4, 0);
@@ -46,29 +56,53 @@ fn main() {
         log::error!("Please update your Monado/WiVRn installation.");
         log::error!("Required: API {} or later", required_libmonado_version);
         log::error!("Current: API {}", libmonado_version);
-        return;
+        return ExitCode::FAILURE;
     }
 
-    match handle_non_xr_subcommands(&subcommands, &monado) {
-        Ok(true) => return,
+    match handle_non_xr_subcommands(&args, &monado) {
+        Ok(true) => return ExitCode::SUCCESS,
         Ok(false) => {}
         Err(e) => {
             log::error!("{:?}", e);
-            return;
+            return ExitCode::FAILURE;
         }
     }
 
-    if let Err(e) = xr_loop(subcommands, monado, status) {
+    if let Err(e) = xr_loop(args, monado, status) {
         log::error!("{:?}", e);
         // return;
     }
+
+    ExitCode::SUCCESS
 }
 
-fn handle_non_xr_subcommands(
-    subcommands: &Subcommands,
-    monado: &mnd::Monado,
-) -> anyhow::Result<bool> {
-    match subcommands {
+fn wait_monado() {
+    let Ok(self_cmd) = env::current_exe() else {
+        log::error!("Could not determine current exe.");
+        return;
+    };
+
+    loop {
+        match Command::new(&self_cmd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .arg("check")
+            .status()
+        {
+            Ok(e) if matches!(e.code(), Some(2)) => {}
+            _ => {
+                log::error!("Error while waiting for Monado!");
+                break;
+            }
+        }
+
+        thread::sleep(Duration::from_secs(5));
+    }
+}
+
+fn handle_non_xr_subcommands(args: &Args, monado: &mnd::Monado) -> anyhow::Result<bool> {
+    match args.command {
         Subcommands::Show => {
             let mut devs = vec![];
             let mut dev_tos = vec![];
@@ -115,7 +149,7 @@ fn handle_non_xr_subcommands(
         }
         Subcommands::Reset { id } => {
             for to in monado.tracking_origins()?.into_iter() {
-                if to.id != *id {
+                if to.id != id {
                     continue;
                 }
                 match to.set_offset(TransformD::default().into()) {
@@ -135,11 +169,11 @@ fn handle_non_xr_subcommands(
             z,
         } => {
             for to in monado.tracking_origins()?.into_iter() {
-                if to.id != *id {
+                if to.id != id {
                     continue;
                 }
 
-                let mut offset = if *relative {
+                let mut offset = if relative {
                     to.get_offset()?.into()
                 } else {
                     TransformD::default()
@@ -157,15 +191,12 @@ fn handle_non_xr_subcommands(
             }
             Ok(true)
         }
+        Subcommands::Check => Ok(true),
         _ => Ok(false),
     }
 }
 
-fn xr_loop(
-    subcommands: Subcommands,
-    monado: mnd::Monado,
-    mut status: MultiProgress,
-) -> anyhow::Result<()> {
+fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow::Result<()> {
     let (instance, system) = helpers_xr::xr_init()?;
 
     let actions = instance.create_action_set("motoc", "MoToC", 0)?;
@@ -203,7 +234,7 @@ fn xr_loop(
 
                         let mut data = load_calibrator_data(&session, &mndx, &monado)?;
 
-                        match subcommands {
+                        match args.command {
                             Subcommands::Monitor => {
                                 calibrator = Some(Box::new({
                                     let mut c = Monitor::new();
@@ -446,6 +477,18 @@ fn load_calibrator_data<'a, G>(
 }
 
 #[derive(clap::Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// The command to run
+    #[command(subcommand)]
+    command: Subcommands,
+
+    /// Wait for Monado to become available (instead of exiting)
+    #[arg(short, long)]
+    wait: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 enum Subcommands {
     /// Show available tracking origings and their devices
     Show,
@@ -541,4 +584,6 @@ enum Subcommands {
     },
     /// Load a previous calibration. If last calibration was not continous; apply once and exit.
     Continue,
+    /// Check if Monado is reachable, then exit.
+    Check,
 }
