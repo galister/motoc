@@ -99,8 +99,12 @@ impl Calibrator for Monitor {
                             format!("{}{:.0}%", symbol, battery.charge * 100.0).color(
                                 if battery.charging {
                                     Color::BrightBlue
-                                } else {
+                                } else if battery.charge > 0.4 {
                                     Color::BrightGreen
+                                } else if battery.charge > 0.2 {
+                                    Color::Yellow
+                                } else {
+                                    Color::BrightRed
                                 }
                             )
                         );
