@@ -147,16 +147,39 @@ fn handle_non_xr_subcommands(args: &Args, monado: &mnd::Monado) -> anyhow::Resul
             }
             Ok(true)
         }
-        Subcommands::Reset { id } => {
-            for to in monado.tracking_origins()?.into_iter() {
-                if to.id != id {
-                    continue;
+        Subcommands::Reset { ref id } => {
+            match id.to_lowercase().as_str() {
+                "stage" => {
+                    monado.set_reference_space_offset(
+                        mnd::ReferenceSpaceType::Stage,
+                        TransformD::default().into(),
+                    )?;
+                    println!("STAGE has been reset!");
                 }
-                match to.set_offset(TransformD::default().into()) {
-                    Ok(_) => println!("{} has been reset.", to.name),
-                    Err(e) => println!("Could not reset due to libmonado error: {:?}", e),
+                "local" => {
+                    monado.set_reference_space_offset(
+                        mnd::ReferenceSpaceType::Local,
+                        TransformD::default().into(),
+                    )?;
+                    println!("LOCAL has been reset!");
                 }
-                break;
+                a => {
+                    let Ok(id) = a.parse::<u32>() else {
+                        println!("ID must be a tracking origin ID or 'STAGE' or 'LOCAL'!");
+                        return Ok(true);
+                    };
+                    for to in monado.tracking_origins()?.into_iter() {
+                        if to.id != id {
+                            continue;
+                        }
+                        match to.set_offset(TransformD::default().into()) {
+                            Ok(_) => println!("{} has been reset.", to.name),
+                            Err(e) => println!("Could not reset due to libmonado error: {:?}", e),
+                        }
+                        return Ok(true);
+                    }
+                    println!("No such tracking origin: {}", id);
+                }
             }
             Ok(true)
         }
@@ -458,8 +481,8 @@ fn load_calibrator_data<'a, G>(
             tracking_origin: dev.get_info_u32(mnd::MndProperty::PropertyTrackingOriginU32)?,
             serial,
             space,
-            name: dev.name,
             index: dev.index,
+            inner: dev,
         });
     }
 
@@ -468,6 +491,7 @@ fn load_calibrator_data<'a, G>(
     }
 
     Ok(CalibratorData {
+        monado,
         devices,
         tracking_origins,
         stage: session
@@ -578,9 +602,9 @@ enum Subcommands {
     },
     /// Reset the offset for the given tracking origin.
     Reset {
-        /// tracking origin ID from `motoc show`
-        #[arg(value_name = "ORIGIN")]
-        id: u32,
+        /// tracking origin ID from `motoc show` or 'STAGE' or 'LOCAL'
+        #[arg(value_name = "ID")]
+        id: String,
     },
     /// Load a previous calibration. If last calibration was not continous; apply once and exit.
     Continue,

@@ -12,6 +12,8 @@ use crate::{
     transformd::TransformD,
 };
 
+use libmonado_rs as mnd;
+
 use super::{Calibrator, StepResult};
 
 // maintains a constant, but smoothed offset between two selected devices
@@ -77,12 +79,12 @@ impl Calibrator for OffsetMethod {
         log::info!(
             "Device A: {} ({})",
             data.devices[self.device_a].serial,
-            data.devices[self.device_a].name
+            data.devices[self.device_a].inner.name
         );
         log::info!(
             "Device B: {} ({})",
             data.devices[self.device_b].serial,
-            data.devices[self.device_b].name
+            data.devices[self.device_b].inner.name
         );
 
         log::info!("B-to-A offset: {}", self.target_offset);
@@ -119,6 +121,14 @@ impl Calibrator for OffsetMethod {
             }
             return Ok(StepResult::Continue);
         }
+
+        let inv_stage = TransformD::from(
+            data.monado
+                .get_reference_space_offset(mnd::ReferenceSpaceType::Stage)?,
+        )
+        .inverse();
+
+        let (pose_a, pose_b) = (inv_stage * pose_a, inv_stage * pose_b);
 
         let target_a = pose_b * self.target_offset;
 

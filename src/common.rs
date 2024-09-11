@@ -47,17 +47,18 @@ pub static UNIT: LazyLock<UnitVectors> = LazyLock::new(|| UnitVectors {
 });
 
 #[allow(dead_code)]
-pub struct Device {
-    pub name: String,
+pub struct Device<'a> {
     pub serial: String,
     pub index: u32,
     pub tracking_origin: u32,
     pub space: xr::Space,
+    pub inner: mnd::Device<'a>,
 }
 
 pub struct CalibratorData<'a> {
+    pub monado: &'a mnd::Monado,
     pub tracking_origins: Vec<mnd::TrackingOrigin<'a>>,
-    pub devices: Vec<Device>,
+    pub devices: Vec<Device<'a>>,
     pub stage: xr::Space,
     pub now: xr::Time,
 }

@@ -5,6 +5,8 @@ use nalgebra::{
     Vector4, U1, U3,
 };
 
+use libmonado_rs as mnd;
+
 use crate::{
     calibrator::{OffsetMethod, StepResult},
     common::OffsetType,
@@ -99,6 +101,13 @@ impl SampledMethod {
             .locate(&data.stage, data.now)?
             .into_transformd()?;
 
+        let inv_stage = TransformD::from(
+            data.monado
+                .get_reference_space_offset(mnd::ReferenceSpaceType::Stage)?,
+        )
+        .inverse();
+
+        let (new_a, new_b) = (inv_stage * new_a, inv_stage * new_b);
         self.samples.push(Sample { a: new_a, b: new_b });
 
         Ok(())
