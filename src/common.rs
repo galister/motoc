@@ -64,8 +64,12 @@ pub struct CalibratorData<'a> {
 }
 
 impl<'a> CalibratorData<'a> {
-    pub fn find_device(&self, serial: &str) -> Option<usize> {
-        self.devices.iter().position(|d| d.serial == *serial)
+    pub fn find_device(&self, serial_or_id: &str) -> Option<usize> {
+        if let Ok(id) = serial_or_id.parse::<u32>() {
+            self.devices.iter().position(|d| d.index == id)
+        } else {
+            self.devices.iter().position(|d| d.serial == *serial_or_id)
+        }
     }
 
     pub fn get_device_origin(&self, device: usize) -> anyhow::Result<mnd::TrackingOrigin<'a>> {

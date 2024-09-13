@@ -558,12 +558,12 @@ enum Subcommands {
     },
     /// Calibrate by sampling two devices that move together over time
     Calibrate {
-        /// the source device (usu. HMD)
-        #[arg(long, value_name = "SERIAL_NUMBER")]
+        /// the numeric id or serial number of the source device (usu. HMD)
+        #[arg(long, value_name = "DEVICE")]
         src: String,
 
-        /// the destination device (usu. tracker)
-        #[arg(long, value_name = "SERIAL_NUMBER")]
+        /// the numeric id or serial number of the destination device (usu. tracker)
+        #[arg(long, value_name = "DEVICE")]
         dst: String,
 
         /// continue maintaining offset after calibration. enable if the devices are firmly attached
