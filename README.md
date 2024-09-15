@@ -4,12 +4,16 @@ This tool allows users to calibrate devices of different tracking origins (track
 
 You will need Monado/WiVRn fresh from the main branch.
 
-## Building
+## Installing
 
-Ensure your rust toolchain is up to date: `rustup update stable`
+Ensure Rust toolchain is up-to-date: `rustup update stable`
+
+For Arch-based distros, AUR package `motoc-git` is available.
+
+Other distros, install via cargo:
 
 ```bash
-cargo build --release
+cargo install --git https://github.com/galister/motoc.git motoc
 ```
 
 ## How to use
