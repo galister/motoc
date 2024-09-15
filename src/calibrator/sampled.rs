@@ -101,13 +101,12 @@ impl SampledMethod {
             .locate(&data.stage, data.now)?
             .into_transformd()?;
 
-        let inv_stage = TransformD::from(
+        let stage = TransformD::from(
             data.monado
                 .get_reference_space_offset(mnd::ReferenceSpaceType::Stage)?,
-        )
-        .inverse();
+        );
 
-        let (new_a, new_b) = (inv_stage * new_a, inv_stage * new_b);
+        let (new_a, new_b) = (stage * new_a, stage * new_b);
         self.samples.push(Sample { a: new_a, b: new_b });
 
         Ok(())

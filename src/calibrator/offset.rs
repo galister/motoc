@@ -122,13 +122,12 @@ impl Calibrator for OffsetMethod {
             return Ok(StepResult::Continue);
         }
 
-        let inv_stage = TransformD::from(
+        let stage = TransformD::from(
             data.monado
                 .get_reference_space_offset(mnd::ReferenceSpaceType::Stage)?,
-        )
-        .inverse();
+        );
 
-        let (pose_a, pose_b) = (inv_stage * pose_a, inv_stage * pose_b);
+        let (pose_a, pose_b) = (stage * pose_a, stage * pose_b);
 
         let target_a = pose_b * self.target_offset;
 
