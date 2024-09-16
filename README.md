@@ -13,7 +13,7 @@ For Arch-based distros, AUR package `motoc-git` is available.
 Other distros, install via cargo:
 
 ```bash
-cargo install --git https://github.com/galister/motoc.git motoc
+cargo install --git https://github.com/galister/motoc.git
 ```
 
 ## How to use
