@@ -4,6 +4,8 @@ This tool allows users to calibrate devices of different tracking origins (track
 
 You will need Monado/WiVRn fresh from the main branch.
 
+See [LVRA Wiki: WiVRn + Lighthouse Guide](https://lvra.gitlab.io/docs/fossvr/wivrn/#wivrn--lighthouse-driver) for more details about usage with WiVRn.
+
 ## Installing
 
 Ensure Rust toolchain is up-to-date: `rustup update stable`
