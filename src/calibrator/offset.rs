@@ -1,13 +1,9 @@
-use std::{
-    f64::consts::PI,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use nalgebra::{Rotation3, Vector3};
 
 use crate::{
-    common::UNIT,
     helpers_xr::{EffectiveSpaceVelocity, SpaceLocationConvert},
     transformd::TransformD,
 };
@@ -22,8 +18,10 @@ pub struct OffsetMethod {
     device_b: usize,
     target_offset: TransformD,
     lerp_factor: f64,
+    lerp_override_frames: u32,
     spinner: Option<ProgressBar>,
     anomaly_start: Option<Instant>,
+    last_pos_a: Vector3<f64>,
 }
 
 impl OffsetMethod {
@@ -33,8 +31,10 @@ impl OffsetMethod {
             device_b: b,
             target_offset: offset,
             lerp_factor,
+            lerp_override_frames: 0,
             spinner: None,
             anomaly_start: None,
+            last_pos_a: Vector3::from_element(-1_000_000f64),
         }
     }
     pub fn new(
@@ -58,8 +58,10 @@ impl OffsetMethod {
                 basis: rot,
             },
             lerp_factor,
+            lerp_override_frames: 0,
             spinner: None,
             anomaly_start: None,
+            last_pos_a: Vector3::from_element(-1_000_000f64),
         }
     }
 }
@@ -109,11 +111,11 @@ impl Calibrator for OffsetMethod {
             return Ok(StepResult::Continue);
         };
 
-        // 0.25 m/s or 35 deg/s
+        // 0.25 m/s or 16 deg/s
         if a_vel.effective_linear().norm_squared() > 0.5
             || b_vel.effective_linear().norm_squared() > 0.5
-            || a_vel.effective_angular().norm_squared() > 0.6
-            || b_vel.effective_angular().norm_squared() > 0.6
+            || a_vel.effective_angular().norm_squared() > 0.4
+            || b_vel.effective_angular().norm_squared() > 0.4
         {
             if let Some(spinner) = self.spinner.as_mut() {
                 spinner.set_message("Device(s) moving too fast.");
@@ -131,33 +133,15 @@ impl Calibrator for OffsetMethod {
 
         let target_a = pose_b * self.target_offset;
 
-        // TODO: implement rotation in a smarter way?
-        //
-        // let deviation_local = target_a.inverse() * pose_a;
-        // let deviation_global = target_a.direction() * deviation_local;
+        let delta_global = pose_a * target_a.inverse();
 
         let to_b = data.get_device_origin(self.device_b)?;
         let root_b = TransformD::from(to_b.get_offset()?);
 
-        // If user is looking far up/down, use the right unit vector as reference
-        let ref_dir = if UNIT.YU.dot(&(pose_a.basis * UNIT.ZU)).abs() < 0.9 {
-            UNIT.ZU
-        } else {
-            UNIT.XU
-        };
+        //let pos_offset = root_b.origin - (target_a.origin - pose_a.origin);
+        let pos_offset = root_b.origin + delta_global.origin;
 
-        let v1 = target_a.basis * ref_dir;
-        let v2 = pose_a.basis * ref_dir;
-
-        let angle_y = match v2.x.atan2(v2.z) - v1.x.atan2(v1.z) {
-            a if a > PI => a - 2. * PI,
-            a if a < -PI => a + 2. * PI,
-            a => a,
-        };
-
-        let pos_offset = root_b.origin - (target_a.origin - pose_a.origin);
-
-        // devices are more than 100m apart → anomaly
+        // devices are more than 100m from center → anomaly
         if pos_offset.norm_squared() > 10000.0 {
             if let Some(spinner) = self.spinner.as_mut() {
                 // Tracker flew away
@@ -189,9 +173,22 @@ impl Calibrator for OffsetMethod {
             spinner.tick();
         }
 
+        let lerp_factor = if (pose_a.origin - self.last_pos_a).norm_squared() > 0.5 {
+            log::info!("Tracking jump on device A, ignoring lerp factor.");
+            self.lerp_override_frames = 9;
+            1.0
+        } else if self.lerp_override_frames > 0 {
+            self.lerp_override_frames -= 1;
+            1.0
+        } else {
+            self.lerp_factor
+        };
+
+        self.last_pos_a = pose_a.origin;
+
         let offset = TransformD {
-            origin: root_b.origin - (target_a.origin - pose_a.origin).scale(self.lerp_factor),
-            basis: Rotation3::from_axis_angle(&UNIT.YU, angle_y * self.lerp_factor) * root_b.basis,
+            origin: root_b.origin + (delta_global.origin).scale(lerp_factor),
+            basis: Rotation3::default().slerp(&delta_global.basis, self.lerp_factor) * root_b.basis,
         };
 
         to_b.set_offset(offset.into())?;
