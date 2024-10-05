@@ -138,7 +138,6 @@ impl Calibrator for OffsetMethod {
         let to_b = data.get_device_origin(self.device_b)?;
         let root_b = TransformD::from(to_b.get_offset()?);
 
-        //let pos_offset = root_b.origin - (target_a.origin - pose_a.origin);
         let pos_offset = root_b.origin + delta_global.origin;
 
         // devices are more than 100m from center → anomaly

@@ -218,15 +218,14 @@ impl SampledMethod {
     /// informed by "Averaging Quaternions" from F. Landis Markley, Yang Cheng, John
     /// L. Crassidis, Yaakov Oshman
     /// https://www.acsu.buffalo.edu/%7Ejohnc/ave_quat07.pdf
-    fn avg_b_to_a_offset(&self, offset: TransformD) -> TransformD {
-        let mut verts = Vector3::zeros();
+    fn avg_b_to_a_offset(&self) -> TransformD {
+        let mut vecs = Vector3::zeros();
         let mut quats = Matrix4::zeros();
 
         for samp in self.samples.iter() {
-            //TODO:validate
-            let delta = (offset * samp.b).inverse() * samp.a;
+            let delta = samp.b.inverse() * samp.a;
 
-            verts += delta.origin;
+            vecs += delta.origin;
 
             let mut q = UnitQuaternion::from_rotation_matrix(&delta.basis);
             if q.w < 0.0 {
@@ -237,7 +236,7 @@ impl SampledMethod {
             quats += v * v.adjoint();
         }
 
-        let out_pos = verts.scale(1.0 / self.samples.len() as f64);
+        let out_pos = vecs.scale(1.0 / self.samples.len() as f64);
 
         let eigen = quats.symmetric_eigen();
         let e0 = eigen.eigenvectors.column(0);
@@ -306,7 +305,7 @@ impl Calibrator for SampledMethod {
         dst_origin.set_offset((offset * dst_root).into())?;
 
         if self.maintain {
-            let offset = self.avg_b_to_a_offset(offset);
+            let offset = self.avg_b_to_a_offset();
 
             match data.save_calibration(self.src_dev, self.dst_dev, offset, OffsetType::Device) {
                 Ok(_) => log::info!(
