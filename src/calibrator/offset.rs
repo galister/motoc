@@ -168,7 +168,11 @@ impl Calibrator for OffsetMethod {
         }
 
         if let Some(spinner) = self.spinner.as_mut() {
-            spinner.set_message("Offset mode active.");
+            spinner.set_message(format!(
+                "Offset mode active. Deviation: {:.2}m {:.1}°",
+                delta_global.origin.norm(),
+                delta_global.basis.angle().to_degrees()
+            ));
             spinner.tick();
         }
 

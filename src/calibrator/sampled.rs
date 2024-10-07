@@ -1,9 +1,6 @@
 use anyhow::anyhow;
 use indicatif::{MultiProgress, ProgressBar};
-use nalgebra::{
-    Dyn, Matrix3, Matrix4, OMatrix, Quaternion, Rotation3, RowVector3, UnitQuaternion, Vector3,
-    Vector4, U1, U3,
-};
+use nalgebra::{Dyn, Matrix3, OMatrix, Rotation3, RowVector3, UnitQuaternion, Vector3, U1, U3};
 
 use libmonado_rs as mnd;
 
@@ -215,35 +212,27 @@ impl SampledMethod {
             .map_err(|e| anyhow!(e))
     }
 
-    /// informed by "Averaging Quaternions" from F. Landis Markley, Yang Cheng, John
-    /// L. Crassidis, Yaakov Oshman
-    /// https://www.acsu.buffalo.edu/%7Ejohnc/ave_quat07.pdf
-    fn avg_b_to_a_offset(&self) -> TransformD {
+    fn avg_b_to_a_offset(&self, offset: &TransformD) -> TransformD {
         let mut vecs = Vector3::zeros();
-        let mut quats = Matrix4::zeros();
+        let mut quat: Option<UnitQuaternion<_>> = None;
 
         for samp in self.samples.iter() {
-            let delta = samp.b.inverse() * samp.a;
+            let b_to_a = (*offset * samp.b).inverse() * samp.a;
 
-            vecs += delta.origin;
+            vecs += b_to_a.origin;
+            let q = UnitQuaternion::from_rotation_matrix(&b_to_a.basis);
 
-            let mut q = UnitQuaternion::from_rotation_matrix(&delta.basis);
-            if q.w < 0.0 {
-                q = q.inverse();
+            if let Some(quat) = quat.as_mut() {
+                *quat = quat.slerp(&q, 0.1);
+            } else {
+                quat = Some(q);
             }
-
-            let v = Vector4::new(q.i, q.j, q.k, q.w);
-            quats += v * v.adjoint();
         }
 
         let out_pos = vecs.scale(1.0 / self.samples.len() as f64);
 
-        let eigen = quats.symmetric_eigen();
-        let e0 = eigen.eigenvectors.column(0);
-        let out_rot = UnitQuaternion::from_quaternion(Quaternion::new(e0[3], e0[0], e0[1], e0[2]));
-
         TransformD {
-            basis: out_rot.to_rotation_matrix(),
+            basis: quat.unwrap().to_rotation_matrix(),
             origin: out_pos,
         }
     }
@@ -305,7 +294,7 @@ impl Calibrator for SampledMethod {
         dst_origin.set_offset((offset * dst_root).into())?;
 
         if self.maintain {
-            let offset = self.avg_b_to_a_offset();
+            let offset = self.avg_b_to_a_offset(&offset);
 
             match data.save_calibration(self.src_dev, self.dst_dev, offset, OffsetType::Device) {
                 Ok(_) => log::info!(
@@ -325,7 +314,7 @@ impl Calibrator for SampledMethod {
             match data.save_calibration(
                 src_origin.id as _,
                 dst_origin.id as _,
-                offset,
+                dst_root,
                 OffsetType::TrackingOrigin,
             ) {
                 Ok(_) => log::info!(
