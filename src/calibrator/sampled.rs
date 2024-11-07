@@ -73,10 +73,17 @@ pub struct SampledMethod {
     maintain: bool,
     num_samples: usize,
     progress: Option<ProgressBar>,
+    profile: String,
 }
 
 impl SampledMethod {
-    pub fn new(src_dev: usize, dst_dev: usize, maintain: bool, samples: u32) -> Self {
+    pub fn new(
+        src_dev: usize,
+        dst_dev: usize,
+        maintain: bool,
+        samples: u32,
+        profile: String,
+    ) -> Self {
         Self {
             src_dev,
             dst_dev,
@@ -84,6 +91,7 @@ impl SampledMethod {
             maintain,
             num_samples: samples as _,
             progress: None,
+            profile,
         }
     }
 
@@ -296,7 +304,13 @@ impl Calibrator for SampledMethod {
         if self.maintain {
             let offset = self.avg_b_to_a_offset(&offset);
 
-            match data.save_calibration(self.src_dev, self.dst_dev, offset, OffsetType::Device) {
+            match data.save_calibration(
+                &self.profile,
+                self.src_dev,
+                self.dst_dev,
+                offset,
+                OffsetType::Device,
+            ) {
                 Ok(_) => log::info!(
                     "Saved calibration. Use `motoc continue` on next startup to use this."
                 ),
@@ -312,6 +326,7 @@ impl Calibrator for SampledMethod {
         } else {
             let src_origin = data.get_device_origin(self.src_dev)?;
             match data.save_calibration(
+                &self.profile,
                 src_origin.id as _,
                 dst_origin.id as _,
                 dst_root,

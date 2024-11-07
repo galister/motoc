@@ -302,7 +302,7 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                                             roll.unwrap_or(0.0),
                                         ),
                                         vec3(x.unwrap_or(0.0), y.unwrap_or(0.0), z.unwrap_or(0.0)),
-                                        lerp.unwrap_or(0.05),
+                                        lerp,
                                     );
                                     c.init(&mut data, &mut status)?;
                                     c
@@ -313,6 +313,7 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                                 ref dst,
                                 r#continue: maintain,
                                 samples,
+                                ref profile,
                             } => {
                                 let Some(src_dev) = data.find_device(src) else {
                                     log::error!("src: no such device: {}", &src);
@@ -336,13 +337,20 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                                         dst_dev,
                                         maintain,
                                         samples.unwrap_or(500),
+                                        profile.clone(),
                                     );
                                     c.init(&mut data, &mut status)?;
                                     c
                                 }));
                             }
-                            Subcommands::Continue => {
-                                let last = data.load_calibration()?;
+                            Subcommands::Continue { ref profile } => {
+                                let Ok(last) = data.load_calibration(profile.as_str()) else {
+                                    log::error!(
+                                        "Could not load calibration for profile '{}'. Did you mean to calibrate first?",
+                                        profile
+                                    );
+                                    break 'main_loop;
+                                };
 
                                 match last.offset_type {
                                     OffsetType::TrackingOrigin => {
@@ -553,8 +561,8 @@ enum Subcommands {
         z: Option<f64>,
 
         /// interpolation factor, lower is smoother. range (0, 1]
-        #[arg(long, value_name = "FACTOR")]
-        lerp: Option<f64>,
+        #[arg(long, value_name = "FACTOR", default_value = "0.05")]
+        lerp: f64,
     },
     /// Calibrate by sampling two devices that move together over time
     Calibrate {
@@ -573,6 +581,10 @@ enum Subcommands {
         /// number of samples to use for initial calibration. default: 500
         #[arg(long)]
         samples: Option<u32>,
+
+        /// save the calubration with this profile name
+        #[arg(long, value_name = "NAME", default_value = "last")]
+        profile: String,
     },
     /// Manually adjust the offset of the given tracking origin
     Adjust {
@@ -607,7 +619,11 @@ enum Subcommands {
         id: String,
     },
     /// Load a previous calibration. If last calibration was not continous; apply once and exit.
-    Continue,
+    Continue {
+        /// load the calubration from this profile
+        #[arg(long, value_name = "NAME", default_value = "last")]
+        profile: String,
+    },
     /// Check if Monado is reachable, then exit.
     Check,
 }

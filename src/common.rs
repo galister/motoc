@@ -84,6 +84,7 @@ impl<'a> CalibratorData<'a> {
 
     pub fn save_calibration(
         &self,
+        profile: &str,
         src: usize,
         dst: usize,
         offset: TransformD,
@@ -95,7 +96,7 @@ impl<'a> CalibratorData<'a> {
         if !path.exists() {
             std::fs::create_dir_all(&path)?;
         }
-        path.push("last.json");
+        path.push(format!("{}.json", profile));
 
         let (src_name, dst_name) = match offset_type {
             OffsetType::TrackingOrigin => (
@@ -120,10 +121,16 @@ impl<'a> CalibratorData<'a> {
         Ok(())
     }
 
-    pub fn load_calibration(&self) -> anyhow::Result<SavedCalibration> {
+    pub fn load_calibration(&self, profile: &str) -> anyhow::Result<SavedCalibration> {
         let xdg_dirs = xdg::BaseDirectories::new()?;
         let mut path = xdg_dirs.get_config_home();
-        path.push("motoc/last.json");
+        path.push("motoc");
+        path.push(format!("{}.json", profile));
+
+        log::debug!(
+            "Will load calibration data from: {}",
+            path.to_string_lossy()
+        );
 
         let f = File::open(path)?;
         let data: SavedCalibration = serde_json::from_reader(f)?;
