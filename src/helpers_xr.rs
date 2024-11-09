@@ -27,6 +27,10 @@ pub(crate) fn xr_init() -> anyhow::Result<(xr::Instance, xr::SystemId)> {
     enabled_extensions.khr_convert_timespec_time = true;
     enabled_extensions.other.push(xdev_ext_name);
 
+    if available_extensions.ext_hand_tracking {
+        enabled_extensions.ext_hand_tracking = true;
+    }
+
     let Ok(instance) = entry.create_instance(
         &xr::ApplicationInfo {
             api_version: xr::Version::new(1, 0, 0),

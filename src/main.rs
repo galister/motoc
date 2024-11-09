@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use calibrator::{Calibrator, Monitor, OffsetMethod, SampledMethod, StepResult};
+use calibrator::{Calibrator, FloorMethod, Monitor, OffsetMethod, SampledMethod, StepResult};
 use clap::Parser;
 use common::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use env_logger::Env;
@@ -402,6 +402,13 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                                     }
                                 }
                             }
+                            Subcommands::Floor => {
+                                calibrator = Some(Box::new({
+                                    let mut c = FloorMethod::new(&session)?;
+                                    c.init(&mut data, &mut status)?;
+                                    c
+                                }));
+                            }
                             _ => {}
                         }
                         calibrator_data = Some(data);
@@ -586,6 +593,8 @@ enum Subcommands {
         #[arg(long, value_name = "NAME", default_value = "last")]
         profile: String,
     },
+    /// Auto-adjust the floor level using hand tracking, by placing hands on floor
+    Floor,
     /// Manually adjust the offset of the given tracking origin
     Adjust {
         /// tracking origin ID from `motoc show`

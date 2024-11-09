@@ -1,7 +1,9 @@
+mod floor;
 mod monitor;
 mod offset;
 mod sampled;
 
+pub use floor::FloorMethod;
 use indicatif::MultiProgress;
 pub use monitor::Monitor;
 pub use offset::OffsetMethod;
