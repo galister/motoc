@@ -354,13 +354,19 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
 
                                 match last.offset_type {
                                     OffsetType::TrackingOrigin => {
+                                        let src_transform = if let Some(src_origin) = data.tracking_origins.iter().find(|x| x.name == last.src) {
+                                            src_origin.get_offset()?.into()
+                                        } else {
+                                            log::warn!("Source origin \"{}\" not found, applying calibration with identity source", last.src);
+                                            TransformD::default()
+                                        };
+
                                         for o in data.tracking_origins.iter() {
                                             if o.name != last.dst {
                                                 continue;
                                             }
 
-                                            let offset =
-                                                last.offset * TransformD::from(o.get_offset()?);
+                                            let offset = last.offset * src_transform;
                                             o.set_offset(offset.into())?;
                                             log::info!(
                                                 "Offset successfully applied to: {}",
