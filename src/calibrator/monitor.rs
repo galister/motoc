@@ -64,7 +64,7 @@ impl Calibrator for Monitor {
                 UnitQuaternion::from_quaternion(Quaternion::from(pose.orientation)).euler_angles();
             let pos = format!(
                 "X: {:.2}, Y: {:.2}, Z: {:.2}",
-                stage.position.x, stage.position.y, stage.position.z
+                pose.position.x, pose.position.y, pose.position.z
             );
             let space = " ".repeat(30 - pos.len().min(35));
             println!(" │     {pos} {space} Yaw: {yaw:.2}, Pitch: {pitch:.2}, Roll: {roll:.2}");
