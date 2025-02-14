@@ -299,7 +299,8 @@ impl Calibrator for SampledMethod {
         log::info!("Calibration done. Offset: {}", offset);
 
         let dst_root = TransformD::from(dst_origin.get_offset()?);
-        dst_origin.set_offset((offset * dst_root).into())?;
+        let full_offset = offset * dst_root;
+        dst_origin.set_offset(full_offset.into())?;
 
         if self.maintain {
             let offset = self.avg_b_to_a_offset(&offset);
@@ -325,11 +326,12 @@ impl Calibrator for SampledMethod {
             ))))
         } else {
             let src_origin = data.get_device_origin(self.src_dev)?;
+            let src_root = TransformD::from(src_origin.get_offset()?);
             match data.save_calibration(
                 &self.profile,
                 src_origin.id as _,
                 dst_origin.id as _,
-                dst_root,
+                full_offset * src_root.inverse(),
                 OffsetType::TrackingOrigin,
             ) {
                 Ok(_) => log::info!(
