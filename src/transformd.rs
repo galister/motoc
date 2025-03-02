@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use libmonado_rs as mnd;
+use libmonado as mnd;
 use nalgebra::{Quaternion, Rotation3, UnitQuaternion, Vector3};
 use openxr as xr;
 use serde::{Deserialize, Serialize};

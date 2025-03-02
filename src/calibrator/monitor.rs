@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use colored::{Color, Colorize};
-use libmonado_rs as mnd;
+use libmonado as mnd;
 use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use openxr::{SpaceLocationFlags, SpaceVelocityFlags};
 

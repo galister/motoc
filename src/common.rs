@@ -1,6 +1,6 @@
 use std::{fs::File, sync::LazyLock};
 
-use libmonado_rs as mnd;
+use libmonado as mnd;
 use nalgebra::{UnitVector3, Vector3};
 use openxr as xr;
 use serde::{Deserialize, Serialize};

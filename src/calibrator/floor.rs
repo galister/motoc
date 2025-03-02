@@ -2,7 +2,7 @@ use std::{mem::MaybeUninit, ptr};
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
-use libmonado_rs as mnd;
+use libmonado as mnd;
 use openxr as xr;
 
 use super::{Calibrator, StepResult};

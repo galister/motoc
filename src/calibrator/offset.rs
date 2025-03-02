@@ -8,7 +8,7 @@ use crate::{
     transformd::TransformD,
 };
 
-use libmonado_rs as mnd;
+use libmonado as mnd;
 
 use super::{Calibrator, StepResult};
 

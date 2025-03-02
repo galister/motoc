@@ -12,7 +12,7 @@ use common::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use env_logger::Env;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use libmonado_rs::{self as mnd};
+use libmonado::{self as mnd};
 use nalgebra::{Quaternion, Rotation3, UnitQuaternion};
 use openxr as xr;
 use transformd::TransformD;

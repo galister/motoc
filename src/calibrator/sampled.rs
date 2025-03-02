@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use indicatif::{MultiProgress, ProgressBar};
 use nalgebra::{Dyn, Matrix3, OMatrix, Rotation3, RowVector3, UnitQuaternion, Vector3, U1, U3};
 
-use libmonado_rs as mnd;
+use libmonado as mnd;
 
 use crate::{
     calibrator::{OffsetMethod, StepResult},
