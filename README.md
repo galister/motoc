@@ -26,7 +26,8 @@ cargo install --git https://github.com/galister/motoc.git
   - `sleep 5; motoc calibrate --src "WiVRn HMD" --dst "LHR-ABCDE000"` (replace with your serials)
   - Add `--continue` if the tracker will stay attached to your headset.
 - Move around so that the two devices move together in space.
-  - If calibrating with a headset, hold the selected device firmly to the headset as you slowly walk around. Avoid erratic movements.
+  - If calibrating with a headset, hold the selected device firmly to the headset as you slowly walk around.
+  - Avoid erratic movements.
   - If the calibration did not succeed, it will retry automatically.
 
 If the same tracker is attached to your headset the same way as last time, use `motoc continue` to re-use the last calibration.
