@@ -50,7 +50,7 @@ If precision is needed during movement, mount the devices using a method that do
 
 ### Calibrate with Standalone HMD or Standalone Controller?
 
-The standalone headset will have some wiggle as a result of inside-out-tracking. The controller is then tracked relative to the HMD. Since the controller itself also has some wiggle, now we need'd to account for both the wiggle of the HMD and the wiggle of the controller.
+The standalone headset will have some tracking wiggle as a result of inside-out-tracking. The controller is then tracked relative to the HMD. Since the controller itself also has some tracking wiggle, now we need'd to account for the tracking wiggle from both the HMD and the controller.
 
 Therefore, I recommend calibrating with the HMD.
 
