@@ -23,13 +23,37 @@ cargo install --git https://github.com/galister/motoc.git
 - With Monado/WiVRn running, use `motoc monitor` to identify the devices you'll be calibrating with.
 - Note down the serial numbers (the part in double quotes) of the devices.
 - Start the calibration:
-  - `motoc calibrate --src "WiVRn HMD" --dst "LHR-ABCDE000"` (replace with your serials)
+  - `sleep 5; motoc calibrate --src "WiVRn HMD" --dst "LHR-ABCDE000"` (replace with your serials)
   - Add `--continue` if the tracker will stay attached to your headset.
 - Move around so that the two devices move together in space.
-  - If calibrating with a headset, hold the selected device firmly to the headset as you slowly walk around.
+  - If calibrating with a headset, hold the selected device firmly to the headset as you slowly walk around. Avoid erratic movements.
   - If the calibration did not succeed, it will retry automatically.
 
 If the same tracker is attached to your headset the same way as last time, use `motoc continue` to re-use the last calibration.
+
+## Calibration Tips
+
+### Tips for high quality calibration
+
+- The most important factor is that the devices are firmly held together, in a way that they move and rotate together perfectly.
+- The devices must be held together in this way from the start to the end of the calibration. If you need time between starting the calibration and putting your devices together, add a `sleep` before `motoc calibrate`.
+- Avoid erratic movements. Motion prediction is known to be different between LH driver and standalone devices. To avoid measurement errors from motion prediction being different, move the devices together in a slow and steady fashion.
+
+### When and when not to use continuous mode?
+
+Only use continuous mode if the 2 devices (tracker & HMD) are firmly attached.
+
+Mounting a tracker to the HMD using velcro, rubber bands or other methods that allow for elastic deformation may be fine to use while at rest, but can induce overcorrections in high-movement scenarios like excercise or dancing.
+
+If precision is needed during movement, mount the devices using a method that doesn't allow any wiggle in movement or rotation between the 2 devices, such as mounting brackets or glue.
+
+### Calibrate with Standalone HMD or Standalone Controller?
+
+The standalone headset will have some wiggle as a result of inside-out-tracking. The controller is then tracked relative to the HMD. Since the controller itself also has some wiggle, now we need'd to account for both the wiggle of the HMD and the wiggle of the controller.
+
+Therefore, I recommend calibrating with the HMD.
+
+Disclaimer: This is all theory, in practice the difference in results may be miniscule.
 
 ## Optimization Tips for usage without a Head Tracker
 
