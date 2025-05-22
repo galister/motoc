@@ -103,6 +103,17 @@ fn wait_monado() {
 
 fn handle_non_xr_subcommands(args: &Args, monado: &mnd::Monado) -> anyhow::Result<bool> {
     match args.command {
+        Subcommands::NumDevices => {
+            let mut count = 0;
+            for d in monado.devices()?.into_iter() {
+                if !d.get_info_bool(mnd::MndProperty::PropertySupportsPositionBool)? {
+                    continue;
+                }
+                count += 1;
+            }
+            println!("{}", count);
+            Ok(true)
+        }
         Subcommands::Show => {
             let mut devs = vec![];
             let mut dev_tos = vec![];
@@ -354,7 +365,11 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
 
                                 match last.offset_type {
                                     OffsetType::TrackingOrigin => {
-                                        let src_transform = if let Some(src_origin) = data.tracking_origins.iter().find(|x| x.name == last.src) {
+                                        let src_transform = if let Some(src_origin) = data
+                                            .tracking_origins
+                                            .iter()
+                                            .find(|x| x.name == last.src)
+                                        {
                                             src_origin.get_offset()?.into()
                                         } else {
                                             log::warn!("Source origin \"{}\" not found, applying calibration with identity source", last.src);
@@ -641,4 +656,6 @@ enum Subcommands {
     },
     /// Check if Monado is reachable, then exit.
     Check,
+    /// Return the number of discovered devices
+    NumDevices,
 }
