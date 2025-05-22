@@ -75,6 +75,12 @@ impl Calibrator for Monitor {
                 .filter(|d| d.tracking_origin == to.id)
                 .collect::<Vec<_>>();
 
+            if to_devs.is_empty() {
+                println!(" └── <no devices>");
+                println!();
+                continue;
+            }
+
             let last = to_devs.len() - 1;
 
             for (i, d) in to_devs.iter().enumerate() {
