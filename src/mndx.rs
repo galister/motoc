@@ -284,7 +284,6 @@ pub struct XrXDevPropertiesMNDX {
     pub can_create_space: xr::sys::Bool32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
-
 const XR_TYPE_CREATE_XDEV_SPACE_INFO_MNDX: i32 = 1000444005;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

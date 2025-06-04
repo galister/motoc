@@ -12,7 +12,7 @@ use common::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use env_logger::Env;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use libmonado::{self as mnd};
+use libmonado as mnd;
 use nalgebra::{Quaternion, Rotation3, UnitQuaternion};
 use openxr as xr;
 use transformd::TransformD;
@@ -195,34 +195,61 @@ fn handle_non_xr_subcommands(args: &Args, monado: &mnd::Monado) -> anyhow::Resul
             Ok(true)
         }
         Subcommands::Adjust {
-            id,
+            ref id,
             relative,
             yaw,
             x,
             y,
             z,
         } => {
-            for to in monado.tracking_origins()?.into_iter() {
-                if to.id != id {
-                    continue;
-                }
+            let id_lower = id.to_lowercase();
 
+            let ref_space_type = match id_lower.as_str() {
+                "stage" => Some(mnd::ReferenceSpaceType::Stage),
+                "local" => Some(mnd::ReferenceSpaceType::Local),
+                _ => None,
+            };
+
+            if let Some(ref_space_type) = ref_space_type {
                 let mut offset = if relative {
-                    to.get_offset()?.into()
+                    monado.get_reference_space_offset(ref_space_type)?.into()
                 } else {
                     TransformD::default()
                 };
-
                 offset.origin += vec3(x.unwrap_or(0.0), y.unwrap_or(0.0), z.unwrap_or(0.0));
                 offset.basis =
                     Rotation3::from_axis_angle(&UNIT.YU, yaw.unwrap_or(0.0)) * offset.basis;
 
-                match to.set_offset(offset.into()) {
-                    Ok(_) => println!("{} has been adjusted.", to.name),
+                match monado.set_reference_space_offset(ref_space_type, offset.into()) {
+                    Ok(_) => println!("{:?} has been adjusted.", ref_space_type),
                     Err(e) => println!("Could not adjust due to libmonado error: {:?}", e),
                 }
-                break;
+            } else {
+                let maybe_id_num: Option<u32> = id.parse().ok();
+                for to in monado.tracking_origins()?.into_iter() {
+                    if maybe_id_num.is_none_or(|x| x != to.id) && id_lower != to.name.to_lowercase()
+                    {
+                        continue;
+                    }
+
+                    let mut offset = if relative {
+                        to.get_offset()?.into()
+                    } else {
+                        TransformD::default()
+                    };
+
+                    offset.origin += vec3(x.unwrap_or(0.0), y.unwrap_or(0.0), z.unwrap_or(0.0));
+                    offset.basis =
+                        Rotation3::from_axis_angle(&UNIT.YU, yaw.unwrap_or(0.0)) * offset.basis;
+
+                    match to.set_offset(offset.into()) {
+                        Ok(_) => println!("{} has been adjusted.", to.name),
+                        Err(e) => println!("Could not adjust due to libmonado error: {:?}", e),
+                    }
+                    break;
+                }
             }
+
             Ok(true)
         }
         Subcommands::Check => Ok(true),
@@ -620,7 +647,7 @@ enum Subcommands {
     Adjust {
         /// tracking origin ID from `motoc show`
         #[arg(value_name = "ORIGIN")]
-        id: u32,
+        id: String,
 
         /// apply a relative offset instead of overriding the existing one
         #[arg(short, long)]
