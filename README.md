@@ -18,6 +18,12 @@ Other distros, install via cargo:
 cargo install --git https://github.com/galister/motoc.git
 ```
 
+Or via Homebrew ([AtomicXR tap](https://codeberg.org/shiloh/homebrew-atomicxr)):
+```bash
+brew tap shiloh/atomicxr https://codeberg.org/shiloh/homebrew-atomicxr.git
+brew install motoc
+```
+
 ## How to use
 
 - With Monado/WiVRn running, use `motoc monitor` to identify the devices you'll be calibrating with.
