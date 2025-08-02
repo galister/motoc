@@ -2,7 +2,7 @@
 
 This tool allows users to calibrate devices of different tracking origins (tracking technologies) to work together.
 
-You will need Monado/WiVRn fresh from the main branch.
+You will need version 25.0 or newer of Monado/WiVRn.
 
 See [LVRA Wiki: WiVRn + Lighthouse Guide](https://lvra.gitlab.io/docs/fossvr/wivrn/#wivrn--lighthouse-driver) for more details about usage with WiVRn.
 
