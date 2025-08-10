@@ -18,9 +18,9 @@ Other distros, install via cargo:
 cargo install --git https://github.com/galister/motoc.git
 ```
 
-Or via Homebrew ([AtomicXR tap](https://codeberg.org/shiloh/homebrew-atomicxr)):
+Or via Homebrew ([AtomicXR tap](https://tangled.sh/@matrixfurry.com/homebrew-atomicxr)):
 ```bash
-brew tap shiloh/atomicxr https://codeberg.org/shiloh/homebrew-atomicxr.git
+brew tap matrixfurry.com/atomicxr https://tangled.sh/@matrixfurry.com/homebrew-atomicxr
 brew install motoc
 ```
 
