@@ -8,8 +8,6 @@ See [LVRA Wiki: WiVRn + Lighthouse Guide](https://lvra.gitlab.io/docs/fossvr/wiv
 
 ## Installing
 
-Ensure Rust toolchain is up-to-date: `rustup update stable`
-
 For Arch-based distros, AUR package `motoc-git` is available.
 
 Other distros, install via cargo:
