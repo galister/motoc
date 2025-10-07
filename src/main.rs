@@ -13,7 +13,6 @@ use clap::Parser;
 use common::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use env_logger::Env;
 use indicatif::MultiProgress;
-use indicatif_log_bridge::LogWrapper;
 use libmonado as mnd;
 use nalgebra::{Quaternion, Rotation3, UnitQuaternion};
 use openxr as xr;
@@ -22,6 +21,7 @@ use transformd::TransformD;
 mod calibrator;
 mod common;
 mod helpers_xr;
+mod logbridge;
 mod mndx;
 mod transformd;
 
@@ -31,7 +31,9 @@ mod test;
 fn main() -> ExitCode {
     let log = env_logger::Builder::from_env(Env::default().default_filter_or("info")).build();
     let status = MultiProgress::new();
-    LogWrapper::new(status.clone(), log).try_init().unwrap();
+    logbridge::LogWrapper::new(status.clone(), log)
+        .try_init()
+        .unwrap();
 
     let args = Args::parse();
 
