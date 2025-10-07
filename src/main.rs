@@ -6,7 +6,9 @@ use std::{
     time::Duration,
 };
 
-use calibrator::{Calibrator, FloorMethod, Monitor, OffsetMethod, SampledMethod, StepResult};
+use calibrator::{
+    Calibrator, FloorMethod, Monitor, OffsetMethod, RecenterMethod, SampledMethod, StepResult,
+};
 use clap::Parser;
 use common::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use env_logger::Env;
@@ -457,6 +459,13 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                                     c
                                 }));
                             }
+                            Subcommands::Recenter { ref id, ref height } => {
+                                calibrator = Some(Box::new({
+                                    let mut c = RecenterMethod::new(id, height)?;
+                                    c.init(&mut data, &mut status)?;
+                                    c
+                                }))
+                            }
                             _ => {}
                         }
                         calibrator_data = Some(data);
@@ -559,6 +568,9 @@ fn load_calibrator_data<'a, G>(
         tracking_origins,
         stage: session
             .create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY)?,
+        local: session
+            .create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)?,
+        view: session.create_reference_space(xr::ReferenceSpaceType::VIEW, xr::Posef::IDENTITY)?,
         now: session.instance().now()?,
     })
 }
@@ -674,6 +686,15 @@ enum Subcommands {
         /// tracking origin ID from `motoc show` or 'STAGE' or 'LOCAL'
         #[arg(value_name = "ID")]
         id: String,
+    },
+    Recenter {
+        /// either STAGE or LOCAL
+        #[arg(value_name = "REFERENCE_SPACE")]
+        id: String,
+
+        /// eye height to calculate with (meters) or "KEEP" to leave height untouched
+        #[arg(long)]
+        height: Option<String>,
     },
     /// Load a previous calibration. If last calibration was not continous; apply once and exit.
     Continue {

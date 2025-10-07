@@ -60,6 +60,8 @@ pub struct CalibratorData<'a> {
     pub tracking_origins: Vec<mnd::TrackingOrigin<'a>>,
     pub devices: Vec<Device<'a>>,
     pub stage: xr::Space,
+    pub local: xr::Space,
+    pub view: xr::Space,
     pub now: xr::Time,
 }
 
@@ -90,8 +92,10 @@ impl<'a> CalibratorData<'a> {
         offset: TransformD,
         offset_type: OffsetType,
     ) -> anyhow::Result<()> {
-        let xdg_dirs = xdg::BaseDirectories::new()?;
-        let mut path = xdg_dirs.get_config_home();
+        let xdg_dirs = xdg::BaseDirectories::new();
+        let mut path = xdg_dirs
+            .get_config_home()
+            .ok_or_else(|| anyhow::anyhow!("No home dir"))?;
         path.push("motoc");
         if !path.exists() {
             std::fs::create_dir_all(&path)?;
@@ -122,8 +126,10 @@ impl<'a> CalibratorData<'a> {
     }
 
     pub fn load_calibration(&self, profile: &str) -> anyhow::Result<SavedCalibration> {
-        let xdg_dirs = xdg::BaseDirectories::new()?;
-        let mut path = xdg_dirs.get_config_home();
+        let xdg_dirs = xdg::BaseDirectories::new();
+        let mut path = xdg_dirs
+            .get_config_home()
+            .ok_or_else(|| anyhow::anyhow!("No home dir"))?;
         path.push("motoc");
         path.push(format!("{}.json", profile));
 
