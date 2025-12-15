@@ -106,4 +106,7 @@ impl Calibrator for RecenterMethod {
 
         Ok(StepResult::End)
     }
+    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

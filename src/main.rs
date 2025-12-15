@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     env,
     process::{Command, ExitCode, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     thread,
     time::Duration,
 };
@@ -28,7 +29,15 @@ mod transformd;
 #[cfg(test)]
 mod test;
 
+pub static RUNNING: AtomicBool = AtomicBool::new(true);
+
 fn main() -> ExitCode {
+    let _ = ctrlc::set_handler({
+        || {
+            RUNNING.store(false, Ordering::Relaxed);
+        }
+    });
+
     let log = env_logger::Builder::from_env(Env::default().default_filter_or("info")).build();
     let status = MultiProgress::new();
     logbridge::LogWrapper::new(status.clone(), log)
@@ -501,6 +510,11 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
 
         if let (Some(data), Some(cal)) = (calibrator_data.as_mut(), calibrator.as_mut()) {
             data.now = instance.now()?;
+            if !RUNNING.load(Ordering::Relaxed) {
+                cal.finish(data)?;
+                log::info!("Received shutdown signal.");
+                break 'main_loop;
+            }
             match cal.step(data)? {
                 StepResult::End => {
                     status.clear()?;

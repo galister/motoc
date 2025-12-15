@@ -198,4 +198,7 @@ impl Calibrator for OffsetMethod {
 
         Ok(StepResult::Continue)
     }
+    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

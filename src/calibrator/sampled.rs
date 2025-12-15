@@ -343,4 +343,7 @@ impl Calibrator for SampledMethod {
             Ok(StepResult::End)
         }
     }
+    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

@@ -9,6 +9,14 @@ use super::{Calibrator, StepResult};
 
 const TICKER_SIZE: usize = 10;
 
+fn alternative_screen_enter() {
+    print!("\x1b[?1049h\x1b[H");
+}
+
+fn alternative_screen_leave() {
+    print!("\x1b[?1049l");
+}
+
 pub struct Monitor {}
 
 impl Monitor {
@@ -23,6 +31,7 @@ impl Calibrator for Monitor {
         _: &mut crate::common::CalibratorData,
         _: &mut indicatif::MultiProgress,
     ) -> anyhow::Result<super::StepResult> {
+        alternative_screen_enter();
         Ok(StepResult::Continue)
     }
 
@@ -208,5 +217,9 @@ impl Calibrator for Monitor {
         }
 
         Ok(StepResult::Continue)
+    }
+    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+        alternative_screen_leave();
+        Ok(())
     }
 }

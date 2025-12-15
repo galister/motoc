@@ -30,4 +30,5 @@ pub trait Calibrator {
     ) -> anyhow::Result<StepResult>;
 
     fn step(&mut self, data: &mut CalibratorData) -> anyhow::Result<StepResult>;
+    fn finish(&mut self, data: &mut CalibratorData) -> anyhow::Result<()>;
 }
