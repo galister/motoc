@@ -6,7 +6,7 @@ use openxr_mndx_xdev_space::XR_MNDX_XDEV_SPACE_EXTENSION_NAME;
 
 use crate::transformd::TransformD;
 
-pub(crate) fn xr_init() -> anyhow::Result<(xr::Instance, xr::SystemId)> {
+pub fn xr_init() -> anyhow::Result<(xr::Instance, xr::SystemId)> {
     let entry = xr::Entry::linked();
 
     let Ok(available_extensions) = entry.enumerate_extensions() else {

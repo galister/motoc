@@ -8,27 +8,19 @@ use std::{
 };
 
 use anyhow::Context;
-use calibrator::{
-    Calibrator, FloorMethod, Monitor, OffsetMethod, RecenterMethod, SampledMethod, StepResult,
-};
 use clap::Parser;
-use common::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use env_logger::Env;
 use indicatif::MultiProgress;
 use libmonado::{self as mnd, DeviceLogic};
 use nalgebra::{Quaternion, Rotation3, UnitQuaternion};
 use openxr as xr;
 use openxr_mndx_xdev_space::SessionXDevExtensionMNDX;
-use transformd::TransformD;
 
-mod calibrator;
-mod common;
-mod helpers_xr;
+use libmotoc::{Calibrator, FloorMethod, Monitor, OffsetMethod, RecenterMethod, SampledMethod, StepResult};
+use libmotoc::{vec3, CalibratorData, Device, OffsetType, UNIT};
+use libmotoc::TransformD;
+
 mod logbridge;
-mod transformd;
-
-#[cfg(test)]
-mod test;
 
 pub static RUNNING: AtomicBool = AtomicBool::new(true);
 
@@ -164,10 +156,10 @@ fn handle_non_xr_subcommands(args: &Args, monado: &mnd::Monado) -> anyhow::Resul
                         UnitQuaternion::from_quaternion(Quaternion::from(pose.orientation))
                             .euler_angles();
                     println!(
-                        " │ POS: (X: {:.2}, Y: {:.2}, Z: {:.2})",
+                        " │ POS: (X: {:.2}, Y: {:.2}, Z: {:.2})",
                         pose.position.x, pose.position.y, pose.position.z
                     );
-                    println!(" │ ROT: (Y: {:.2}, P: {:.2}, R: {:.2})", yaw, pitch, roll);
+                    println!(" │ ROT: (Y: {:.2}, P: {:.2}, R: {:.2})", yaw, pitch, roll);
                 }
 
                 let to_devs = devs
@@ -297,7 +289,7 @@ fn handle_non_xr_subcommands(args: &Args, monado: &mnd::Monado) -> anyhow::Resul
 }
 
 fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow::Result<()> {
-    let (instance, system) = helpers_xr::xr_init()?;
+    let (instance, system) = libmotoc::xr_init()?;
 
     let actions = instance.create_action_set("motoc", "MoToC", 0)?;
 
