@@ -1,5 +1,10 @@
 use std::{
+    collections::VecDeque,
     io::{self, Stdout},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -14,6 +19,7 @@ use crossterm::{
 };
 use libmonado::{self as mnd, DeviceLogic};
 use libmotoc::{CalibratorData, ResultExt};
+use log::Level;
 use nalgebra::{Quaternion, Rotation3, UnitQuaternion, Vector3};
 use openxr::SpaceVelocityFlags;
 use ratatui::{
@@ -32,10 +38,72 @@ use super::{CalibratorStatus, OffsetMethod, RecenterMethod, SampledMethod, StepR
 pub type Result<T> = std::result::Result<T, libmotoc::Error>;
 
 const TICKER_SIZE: usize = 10;
+const MAX_LOG_LINES: usize = 200;
+pub const SPINNER_TICK_CHARS: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 const COMMANDS: [&str; 5] = ["Continue", "Calibrate", "Adjust", "Recenter", "Reset"];
 const OFFSET_DELTAS: [f64; 8] = [-10.0, -1.0, -0.1, -0.01, 0.01, 0.1, 1.0, 10.0];
 
 type TuiTerminal = Terminal<CrosstermBackend<Stdout>>;
+
+#[derive(Clone, Debug)]
+struct LogLine {
+    level: Level,
+    message: String,
+}
+
+#[derive(Default)]
+struct TuiLogBufferInner {
+    active: AtomicBool,
+    lines: Mutex<VecDeque<LogLine>>,
+}
+
+#[derive(Clone, Default)]
+pub struct TuiLogBuffer {
+    inner: Arc<TuiLogBufferInner>,
+}
+
+impl TuiLogBuffer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn push(&self, level: Level, message: &str) {
+        let mut lines = self
+            .inner
+            .lines
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+
+        for message in message.split('\n') {
+            lines.push_back(LogLine {
+                level,
+                message: message.trim_end_matches('\r').to_owned(),
+            });
+        }
+
+        while lines.len() > MAX_LOG_LINES {
+            lines.pop_front();
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.inner.active.load(Ordering::Acquire)
+    }
+
+    fn set_active(&self, active: bool) {
+        self.inner.active.store(active, Ordering::Release);
+    }
+
+    fn recent(&self, count: usize) -> Vec<LogLine> {
+        let lines = self
+            .inner
+            .lines
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let skip = lines.len().saturating_sub(count);
+        lines.iter().skip(skip).cloned().collect()
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SpaceKind {
@@ -168,7 +236,6 @@ enum MouseAction {
     CalibrateSamples(i32),
     CalibrateToggle,
     CalibrateStart,
-    Back,
     AdjustTarget(usize),
     AdjustDelta { axis: Axis, delta: f64 },
     Recenter(SpaceKind),
@@ -193,6 +260,8 @@ impl Hitbox {
 pub struct Tui {
     terminal: Option<TuiTerminal>,
     terminal_active: bool,
+    logs: TuiLogBuffer,
+    spinner_frame: usize,
     screen: Screen,
     selected_command: usize,
     overview_scroll: u16,
@@ -202,10 +271,12 @@ pub struct Tui {
 }
 
 impl Tui {
-    pub fn new() -> Self {
+    pub fn new(logs: TuiLogBuffer) -> Self {
         Self {
             terminal: None,
             terminal_active: false,
+            logs,
+            spinner_frame: 0,
             screen: Screen::Dashboard,
             selected_command: 0,
             overview_scroll: 0,
@@ -216,7 +287,11 @@ impl Tui {
     }
 
     fn start_terminal(&mut self) -> Result<()> {
-        enable_raw_mode().context("Unable to enable terminal raw mode")?;
+        self.logs.set_active(true);
+        if let Err(error) = enable_raw_mode() {
+            self.logs.set_active(false);
+            return Err(error).context("Unable to enable terminal raw mode");
+        }
 
         let mut stdout = io::stdout();
         if let Err(error) = execute!(
@@ -226,6 +301,7 @@ impl Tui {
             cursor::Hide
         ) {
             let _ = disable_raw_mode();
+            self.logs.set_active(false);
             return Err(error).context("Unable to enter the alternate screen");
         }
 
@@ -253,6 +329,7 @@ impl Tui {
                     LeaveAlternateScreen
                 );
                 let _ = disable_raw_mode();
+                self.logs.set_active(false);
                 Err(error).context("Unable to initialize the terminal")
             }
         }
@@ -260,6 +337,7 @@ impl Tui {
 
     fn stop_terminal(&mut self) -> Result<()> {
         if !self.terminal_active {
+            self.logs.set_active(false);
             return Ok(());
         }
 
@@ -282,6 +360,7 @@ impl Tui {
         if let Err(error) = disable_raw_mode() {
             first_error.get_or_insert(error);
         }
+        self.logs.set_active(false);
 
         match first_error {
             Some(error) => Err(error).context("Unable to restore the terminal"),
@@ -296,10 +375,23 @@ impl Tui {
     ) -> Result<()> {
         self.hitboxes.clear();
 
+        let spinner_char = if matches!(calibrator_status, Some(CalibratorStatus::Spinner { .. })) {
+            let spinner_char = SPINNER_TICK_CHARS
+                .chars()
+                .nth(self.spinner_frame)
+                .unwrap_or('⠋');
+            self.spinner_frame = (self.spinner_frame + 1) % SPINNER_TICK_CHARS.chars().count();
+            spinner_char
+        } else {
+            self.spinner_frame = 0;
+            '⠋'
+        };
+
         let screen = &self.screen;
         let selected_command = self.selected_command;
         let overview_scroll = self.overview_scroll;
         let status = &self.status;
+        let logs = &self.logs;
         let hitboxes = &mut self.hitboxes;
         let overview_area = &mut self.overview_area;
 
@@ -314,6 +406,8 @@ impl Tui {
                         overview_scroll,
                         status,
                         calibrator_status,
+                        spinner_char,
+                        logs,
                         hitboxes,
                         overview_area,
                     )
@@ -468,7 +562,6 @@ impl Tui {
                 mut axis,
                 mut selected_delta,
             } => {
-                let mut executed = false;
                 match key.code {
                     KeyCode::Esc => {
                         self.screen = Screen::AdjustSelect { selected: 0 };
@@ -493,15 +586,12 @@ impl Tui {
                             -OFFSET_DELTAS[selected_delta].abs(),
                             data,
                         );
-                        executed = true;
                     }
                     KeyCode::Char('+') | KeyCode::Char('=') => {
                         self.apply_adjust(&target, axis, OFFSET_DELTAS[selected_delta].abs(), data);
-                        executed = true;
                     }
                     KeyCode::Enter | KeyCode::Char(' ') => {
                         self.apply_adjust(&target, axis, OFFSET_DELTAS[selected_delta], data);
-                        executed = true;
                     }
                     KeyCode::Char(ch @ '1'..='4') => {
                         let magnitude = ch as usize - '1' as usize;
@@ -513,14 +603,10 @@ impl Tui {
                     }
                     _ => {}
                 }
-                self.screen = if executed {
-                    Screen::Dashboard
-                } else {
-                    Screen::AdjustEdit {
-                        target,
-                        axis,
-                        selected_delta,
-                    }
+                self.screen = Screen::AdjustEdit {
+                    target,
+                    axis,
+                    selected_delta,
                 };
                 StepResult::Continue
             }
@@ -644,10 +730,6 @@ impl Tui {
                     StepResult::Continue
                 }
             }
-            MouseAction::Back => {
-                self.screen = Screen::Dashboard;
-                StepResult::Continue
-            }
             MouseAction::AdjustTarget(index) => {
                 if let Some(target) = offset_targets(data).get(index).cloned() {
                     self.screen = Screen::AdjustEdit {
@@ -661,7 +743,15 @@ impl Tui {
             MouseAction::AdjustDelta { axis, delta } => {
                 if let Screen::AdjustEdit { target, .. } = self.screen.clone() {
                     self.apply_adjust(&target, axis, delta, data);
-                    self.screen = Screen::Dashboard;
+                    let selected_delta = OFFSET_DELTAS
+                        .iter()
+                        .position(|candidate| *candidate == delta)
+                        .unwrap_or(4);
+                    self.screen = Screen::AdjustEdit {
+                        target,
+                        axis,
+                        selected_delta,
+                    };
                 }
                 StepResult::Continue
             }
@@ -847,7 +937,7 @@ impl Tui {
 
 impl Default for Tui {
     fn default() -> Self {
-        Self::new()
+        Self::new(TuiLogBuffer::new())
     }
 }
 
@@ -1017,7 +1107,7 @@ fn guess_target_device(data: &CalibratorData<'_>, source: usize) -> usize {
     data.devices
         .iter()
         .position(|device| device.tracking_origin != source_origin)
-        .unwrap_or_else(|| if source == 0 { 1 } else { 0 })
+        .unwrap_or(if source == 0 { 1 } else { 0 })
 }
 
 fn cycle_index(index: &mut usize, len: usize, delta: isize) {
@@ -1053,6 +1143,8 @@ fn draw_ui(
     overview_scroll: u16,
     status: &str,
     calibrator_status: Option<&CalibratorStatus>,
+    spinner_char: char,
+    logs: &TuiLogBuffer,
     hitboxes: &mut Vec<Hitbox>,
     overview_area: &mut Rect,
 ) {
@@ -1068,17 +1160,22 @@ fn draw_ui(
     *overview_area = panels[0];
     draw_overview(frame, panels[0], data, overview_scroll);
 
+    let right_panels = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(7), Constraint::Length(5)])
+        .split(panels[1]);
+
     match screen {
         Screen::Dashboard => {
-            draw_commands(frame, panels[1], selected_command, hitboxes);
+            draw_commands(frame, right_panels[0], selected_command, hitboxes);
         }
         Screen::Calibrate(form) => {
-            draw_calibrate(frame, panels[1], data, form, hitboxes);
+            draw_calibrate(frame, right_panels[0], data, form, hitboxes);
         }
         Screen::AdjustSelect { selected } => {
             draw_target_list(
                 frame,
-                panels[1],
+                right_panels[0],
                 " Adjust: select target ",
                 &offset_targets(data),
                 *selected,
@@ -1093,7 +1190,7 @@ fn draw_ui(
         } => {
             draw_offset_editor(
                 frame,
-                panels[1],
+                right_panels[0],
                 data,
                 target,
                 *axis,
@@ -1102,12 +1199,12 @@ fn draw_ui(
             );
         }
         Screen::Recenter { selected } => {
-            draw_recenter(frame, panels[1], *selected, hitboxes);
+            draw_recenter(frame, right_panels[0], *selected, hitboxes);
         }
         Screen::Reset { selected } => {
             draw_target_list(
                 frame,
-                panels[1],
+                right_panels[0],
                 " Reset: select target ",
                 &offset_targets(data),
                 *selected,
@@ -1116,31 +1213,32 @@ fn draw_ui(
             );
         }
     }
+    draw_logs(frame, right_panels[1], logs);
 
     let help = match screen {
-        Screen::Dashboard => "↑/↓ select  Enter run  PgUp/PgDn scroll  q quit",
-        Screen::Calibrate(_) => "↑/↓ field  ←/→ change  type steps  Enter activate  Esc back",
+        Screen::Dashboard => "  ↑/↓ select  Enter run  PgUp/PgDn scroll  q quit",
+        Screen::Calibrate(_) => "  ↑/↓ field  ←/→ change  type steps  Enter activate  Esc back",
         Screen::AdjustSelect { .. } | Screen::Recenter { .. } | Screen::Reset { .. } => {
-            "↑/↓ select  Enter confirm  Esc back"
+            "  ↑/↓ select  Enter confirm  Esc back"
         }
         Screen::AdjustEdit { .. } => {
-            "↑/↓ axis  ←/→ button  Enter apply  +/- apply sign  1..4 magnitude  Esc targets"
+            "  ↑/↓ axis  ←/→ button  Enter activate  +/- apply sign  1..4 magnitude  Esc targets"
         }
     };
     let mut footer = Vec::new();
+    footer.push(Span::styled(help, Style::default().fg(Color::Gray)));
     if let Some(calibrator_status) = calibrator_status {
         let text = match calibrator_status {
-            CalibratorStatus::Spinner { message } => format!("⠋ {message}"),
+            CalibratorStatus::Spinner { message } => format!("  |  {spinner_char} {message}"),
             CalibratorStatus::Progress {
                 current,
                 max,
                 message,
-            } => format!("[{current}/{max}] {message}"),
+            } => format!("  |  [{current}/{max}] {message}"),
         };
         footer.push(Span::styled(text, Style::default().fg(Color::LightCyan)));
         footer.push(Span::raw("  "));
-    }
-    if !status.is_empty() {
+    } else if !status.is_empty() {
         footer.push(Span::styled(
             format!("{status}  "),
             Style::default().fg(
@@ -1156,10 +1254,6 @@ fn draw_ui(
             ),
         ));
     }
-    footer.push(Span::styled(
-        help,
-        Style::default().fg(Color::DarkGray),
-    ));
     frame.render_widget(
         Paragraph::new(Line::from(footer))
             .block(Block::default().borders(Borders::TOP))
@@ -1199,7 +1293,7 @@ fn overview_lines(data: &CalibratorData<'_>) -> Vec<Line<'static>> {
             .get_reference_space_offset(space.reference_type())
         {
             Ok(pose) => {
-                let (roll, pitch, yaw) =
+                let (pitch, yaw, roll) =
                     UnitQuaternion::from_quaternion(Quaternion::from(pose.orientation))
                         .euler_angles();
                 lines.push(offset_line(
@@ -1476,6 +1570,36 @@ fn draw_commands(frame: &mut Frame<'_>, area: Rect, selected: usize, hitboxes: &
     }
 }
 
+fn draw_logs(frame: &mut Frame<'_>, area: Rect, logs: &TuiLogBuffer) {
+    let block = Block::default()
+        .title(" Logs ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Blue));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let lines = logs
+        .recent(inner.height as usize)
+        .into_iter()
+        .map(|line| {
+            let color = match line.level {
+                Level::Error => Color::LightRed,
+                Level::Warn => Color::LightYellow,
+                Level::Info => Color::LightCyan,
+                Level::Debug | Level::Trace => Color::DarkGray,
+            };
+            Line::from(vec![
+                Span::styled(
+                    format!("[{:<5}] ", line.level),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(line.message),
+            ])
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
 fn draw_calibrate(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -1547,7 +1671,7 @@ fn draw_calibrate(
     let checkbox = bounded_rect(inner, 0, 9, inner.width, 1);
     frame.render_widget(
         Paragraph::new(format!(
-            "{} Continue maintaining offset",
+            "{} Continuous mode (tracker on HMD)",
             if form.continuous { "[x]" } else { "[ ]" }
         ))
         .style(field_style(form.selected == 3)),
@@ -1558,24 +1682,12 @@ fn draw_calibrate(
         action: MouseAction::CalibrateToggle,
     });
 
-    let buttons = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(bounded_rect(inner, 0, 12, inner.width, 3));
     draw_button(
         frame,
-        buttons[0],
+        bounded_rect(inner, 0, 12, inner.width, 3),
         "Start",
         form.selected == 4,
         MouseAction::CalibrateStart,
-        hitboxes,
-    );
-    draw_button(
-        frame,
-        buttons[1],
-        "Cancel",
-        form.selected == 5,
-        MouseAction::Back,
         hitboxes,
     );
 }
@@ -1695,9 +1807,14 @@ fn draw_offset_editor(
         .border_style(Style::default().fg(Color::Blue));
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(12), Constraint::Length(3)])
+        .split(inner);
+    let controls = sections[0];
 
     let values = get_target_offset(target, data).ok().map(|offset| {
-        let (roll, pitch, yaw) = offset.basis.euler_angles();
+        let (pitch, yaw, roll) = offset.basis.euler_angles();
         [
             offset.origin.x,
             offset.origin.y,
@@ -1717,16 +1834,16 @@ fn draw_offset_editor(
         };
         frame.render_widget(
             Paragraph::new(label).style(field_style(axis == selected_axis)),
-            bounded_rect(inner, 0, y, inner.width, 1),
+            bounded_rect(controls, 0, y, controls.width, 1),
         );
 
-        let button_area = bounded_rect(inner, 0, y + 1, inner.width, 1);
+        let button_area = bounded_rect(controls, 0, y + 1, controls.width, 1);
         let labels = ["-10", "-1", "-.1", "-.01", "+.01", "+.1", "+1", "+10"];
         let buttons = split_evenly(button_area, OFFSET_DELTAS.len());
         for ((button, delta), label) in buttons
             .into_iter()
             .zip(OFFSET_DELTAS)
-            .zip(labels.into_iter())
+            .zip(labels)
         {
             let keyboard_selected = axis == selected_axis && delta == OFFSET_DELTAS[selected_delta];
             frame.render_widget(

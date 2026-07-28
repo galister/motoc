@@ -23,12 +23,45 @@ use libmotoc::{
     StepResult,
 };
 
-use crate::tui::Tui;
+use crate::tui::{Tui, TuiLogBuffer, SPINNER_TICK_CHARS};
 
 mod logbridge;
 mod tui;
 
 pub static RUNNING: AtomicBool = AtomicBool::new(true);
+
+struct TuiLogger<L> {
+    inner: L,
+    logs: TuiLogBuffer,
+}
+
+impl<L> TuiLogger<L> {
+    fn new(inner: L, logs: TuiLogBuffer) -> Self {
+        Self { inner, logs }
+    }
+}
+
+impl<L: log::Log> log::Log for TuiLogger<L> {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        self.inner.enabled(metadata)
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        self.logs
+            .push(record.level(), &record.args().to_string());
+        if !self.logs.is_active() {
+            self.inner.log(record);
+        }
+    }
+
+    fn flush(&self) {
+        self.inner.flush();
+    }
+}
 
 fn main() -> ExitCode {
     let _ = ctrlc::set_handler({
@@ -37,11 +70,13 @@ fn main() -> ExitCode {
         }
     });
 
-    let log = env_logger::Builder::from_env(Env::default().default_filter_or("info")).build();
+    let env_log = env_logger::Builder::from_env(Env::default().default_filter_or("info")).build();
+    let max_log_level = env_log.filter();
     let status = MultiProgress::new();
-    logbridge::LogWrapper::new(status.clone(), log)
-        .try_init()
-        .unwrap();
+    let tui_logs = TuiLogBuffer::new();
+    let log = logbridge::LogWrapper::new(status.clone(), env_log);
+    log::set_boxed_logger(Box::new(TuiLogger::new(log, tui_logs.clone()))).unwrap();
+    log::set_max_level(max_log_level);
 
     let args = Args::parse();
 
@@ -80,7 +115,7 @@ fn main() -> ExitCode {
         }
     }
 
-    if let Err(e) = xr_loop(args, monado, status) {
+    if let Err(e) = xr_loop(args, monado, status, tui_logs) {
         log::error!("{:?}", e);
     }
 
@@ -293,12 +328,45 @@ fn handle_non_xr_subcommands(args: &Args, monado: &mnd::Monado) -> anyhow::Resul
     }
 }
 
-fn update_status(status: &mut MultiProgress, cal_status: Option<&CalibratorStatus>) {
+enum CliStatusBar {
+    Spinner(ProgressBar),
+    Progress(ProgressBar),
+}
+
+impl CliStatusBar {
+    fn bar(&self) -> &ProgressBar {
+        match self {
+            Self::Spinner(bar) | Self::Progress(bar) => bar,
+        }
+    }
+}
+
+fn clear_status(status: &MultiProgress, current: &mut Option<CliStatusBar>) {
+    if let Some(current) = current.take() {
+        current.bar().finish_and_clear();
+        status.remove(current.bar());
+    }
+}
+
+fn update_status(
+    status: &MultiProgress,
+    status_bar: &mut Option<CliStatusBar>,
+    cal_status: Option<&CalibratorStatus>,
+) {
     match cal_status {
         Some(CalibratorStatus::Spinner { message }) => {
-            status.clear().ok();
-            let spinner = status.add(ProgressBar::new_spinner());
-            spinner.set_style(ProgressStyle::default_spinner().tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"));
+            if !matches!(status_bar.as_ref(), Some(CliStatusBar::Spinner(_))) {
+                clear_status(status, status_bar);
+                let spinner = status.add(ProgressBar::new_spinner());
+                spinner.set_style(
+                    ProgressStyle::default_spinner().tick_chars(SPINNER_TICK_CHARS),
+                );
+                *status_bar = Some(CliStatusBar::Spinner(spinner));
+            }
+
+            let Some(CliStatusBar::Spinner(spinner)) = status_bar.as_ref() else {
+                unreachable!();
+            };
             spinner.set_message(message.clone());
             spinner.tick();
         }
@@ -307,24 +375,39 @@ fn update_status(status: &mut MultiProgress, cal_status: Option<&CalibratorStatu
             max,
             message,
         }) => {
-            status.clear().ok();
-            let pb = status.add(ProgressBar::new(*max));
-            pb.set_style(
-                ProgressStyle::with_template("{spinner:.green} {wide_bar} {pos}/{len} {msg}")
+            if !matches!(status_bar.as_ref(), Some(CliStatusBar::Progress(_))) {
+                clear_status(status, status_bar);
+                let progress = status.add(ProgressBar::new(*max));
+                progress.set_style(
+                    ProgressStyle::with_template(
+                        "{spinner:.green} {wide_bar} {pos}/{len} {msg}",
+                    )
                     .unwrap()
-                    .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
-            );
+                    .tick_chars(SPINNER_TICK_CHARS),
+                );
+                *status_bar = Some(CliStatusBar::Progress(progress));
+            }
+
+            let Some(CliStatusBar::Progress(pb)) = status_bar.as_ref() else {
+                unreachable!();
+            };
+            pb.set_length(*max);
             pb.set_position(*current);
             pb.set_message(message.clone());
             pb.tick();
         }
         None => {
-            status.clear().ok();
+            clear_status(status, status_bar);
         }
     }
 }
 
-fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow::Result<()> {
+fn xr_loop(
+    args: Args,
+    monado: mnd::Monado,
+    status: MultiProgress,
+    tui_logs: TuiLogBuffer,
+) -> anyhow::Result<()> {
     let (instance, system) = libmotoc::xr_init()?;
 
     let actions = instance.create_action_set("motoc", "MoToC", 0)?;
@@ -344,7 +427,8 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
     let mut calibrator_data = None;
     let mut tui = None;
     let mut calibrator: Option<Box<dyn Calibrator>> = None;
-    let mut calibrator_status = None;
+    let mut calibrator_status: Option<CalibratorStatus>;
+    let mut cli_status = None;
 
     'main_loop: loop {
         'event_loop: while let Some(event) = instance.poll_event(&mut events)? {
@@ -364,7 +448,7 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
 
                         match args.command {
                             Subcommands::Monitor | Subcommands::Tui => {
-                                let mut ui = Tui::new();
+                                let mut ui = Tui::new(tui_logs.clone());
                                 ui.init()?;
                                 tui = Some(ui);
                             }
@@ -569,6 +653,7 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                 if let Some(ui) = tui.as_mut() {
                     ui.finish()?;
                 }
+                clear_status(&status, &mut cli_status);
                 log::info!("Received shutdown signal.");
                 break 'main_loop;
             }
@@ -583,20 +668,19 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
             };
 
             if tui.is_none() {
-                update_status(&mut status, calibrator_status.as_ref());
+                update_status(&status, &mut cli_status, calibrator_status.as_ref());
             }
 
             if let Some(result) = calibrator_result {
                 match result {
                     StepResult::End => {
                         if tui.is_none() {
-                            status.clear()?;
+                            clear_status(&status, &mut cli_status);
                         }
                         if let Some(cal) = calibrator.as_mut() {
                             cal.finish(data)?;
                         }
                         calibrator = None;
-                        calibrator_status = None;
 
                         if let Some(ui) = tui.as_mut() {
                             ui.set_status("Calibrator finished.");
@@ -607,14 +691,13 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                     }
                     StepResult::Replace(mut new_calibrator) => {
                         if tui.is_none() {
-                            status.clear()?;
+                            clear_status(&status, &mut cli_status);
                         }
                         if let Some(cal) = calibrator.as_mut() {
                             cal.finish(data)?;
                         }
                         new_calibrator.init(data)?;
                         calibrator = Some(new_calibrator);
-                        calibrator_status = None;
                     }
                     StepResult::Continue => {}
                 }
@@ -635,7 +718,7 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                         if let Some(ui) = tui.as_mut() {
                             ui.finish()?;
                         }
-                        status.clear()?;
+                        clear_status(&status, &mut cli_status);
                         break 'main_loop;
                     }
                     StepResult::Replace(mut new_calibrator) => {
@@ -644,7 +727,6 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                         }
                         new_calibrator.init(data)?;
                         calibrator = Some(new_calibrator);
-                        calibrator_status = None;
                     }
                     StepResult::Continue => {}
                 }

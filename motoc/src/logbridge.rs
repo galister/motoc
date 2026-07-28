@@ -24,33 +24,6 @@ impl<L: Log + 'static> LogWrapper<L> {
     pub fn new(bar: MultiProgress, log: L) -> Self {
         Self { bar, log }
     }
-
-    /// Installs this as the global logger.
-    ///
-    /// Tries to find the correct argument to log::set_max_level
-    /// by reading the logger configuration,
-    /// you may want to set it manually though.
-    /// For more details read the [known issues](index.html#wrong-global-log-level).
-    pub fn try_init(self) -> Result<(), log::SetLoggerError> {
-        use log::LevelFilter::*;
-        let levels = [Off, Error, Warn, Info, Debug, Trace];
-
-        for level_filter in levels.iter().rev() {
-            let level = if let Some(level) = level_filter.to_level() {
-                level
-            } else {
-                // off is the last level, just do nothing in that case
-                continue;
-            };
-            let meta = log::Metadata::builder().level(level).build();
-            if self.enabled(&meta) {
-                log::set_max_level(*level_filter);
-                break;
-            }
-        }
-
-        log::set_boxed_logger(Box::new(self))
-    }
 }
 
 impl<L: Log> Log for LogWrapper<L> {
