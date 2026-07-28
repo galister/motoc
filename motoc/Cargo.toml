@@ -3,11 +3,11 @@ name = "motoc"
 version = "0.4.0"
 edition = "2021"
 description = "Monado Tracking Origin Calibrator"
-license = "GPL-3.0-only"
 repository = "https://github.com/galister/motoc"
+license = "GPL-3.0-only"
 
 [dependencies]
-libmotoc = { path = "../libmotoc" }
+libmotoc = { path = "../libmotoc/", version = "0.4.0" }
 
 libmonado.workspace = true
 log.workspace = true
