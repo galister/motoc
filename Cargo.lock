@@ -958,7 +958,7 @@ dependencies = [
 
 [[package]]
 name = "libmotoc"
-version = "0.3.6"
+version = "0.4.0"
 dependencies = [
  "bindgen",
  "libmonado",
@@ -1087,7 +1087,7 @@ dependencies = [
 
 [[package]]
 name = "motoc"
-version = "0.3.6"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
