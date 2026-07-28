@@ -5,7 +5,6 @@ mod recenter;
 mod sampled;
 
 pub use floor::FloorMethod;
-use indicatif::MultiProgress;
 pub use monitor::Monitor;
 pub use offset::OffsetMethod;
 pub use recenter::RecenterMethod;
@@ -25,13 +24,21 @@ pub enum StepResult {
     End,
 }
 
-pub trait Calibrator {
-    fn init(
-        &mut self,
-        data: &mut CalibratorData,
-        status: &mut MultiProgress,
-    ) -> Result<StepResult>;
+#[derive(Debug, Clone)]
+pub enum CalibratorStatus {
+    Spinner {
+        message: String,
+    },
+    Progress {
+        current: u64,
+        max: u64,
+        message: String,
+    },
+}
 
-    fn step(&mut self, data: &mut CalibratorData) -> Result<StepResult>;
+pub trait Calibrator {
+    fn init(&mut self, data: &mut CalibratorData) -> Result<StepResult>;
+    fn step(&mut self, data: &mut CalibratorData)
+        -> Result<(StepResult, Option<CalibratorStatus>)>;
     fn finish(&mut self, data: &mut CalibratorData) -> Result<()>;
 }

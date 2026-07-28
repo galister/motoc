@@ -1,5 +1,3 @@
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-
 use libmonado as mnd;
 use nalgebra::Rotation3;
 use openxr as xr;
@@ -11,7 +9,7 @@ use crate::{
     transformd::TransformD,
 };
 
-use super::{Calibrator, StepResult};
+use super::{Calibrator, CalibratorStatus, StepResult};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -23,7 +21,6 @@ enum HeightMode {
 
 // sets the floor height using palms from hand tracking
 pub struct RecenterMethod {
-    spinner: Option<ProgressBar>,
     space: xr::ReferenceSpaceType,
     height_mode: HeightMode,
 }
@@ -47,28 +44,19 @@ impl RecenterMethod {
             None => HeightMode::Normal,
         };
 
-        Ok(Self {
-            spinner: None,
-            space,
-            height_mode,
-        })
+        Ok(Self { space, height_mode })
     }
 }
 
 impl Calibrator for RecenterMethod {
-    fn init(
-        &mut self,
-        _data: &mut crate::common::CalibratorData,
-        status: &mut MultiProgress,
-    ) -> Result<StepResult> {
-        status.clear().context("Unable to clear status")?;
-        let spinner = status.add(ProgressBar::new_spinner());
-        spinner.set_style(ProgressStyle::default_spinner().tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"));
-
+    fn init(&mut self, _data: &mut crate::common::CalibratorData) -> Result<StepResult> {
         Ok(StepResult::Continue)
     }
 
-    fn step(&mut self, data: &mut crate::common::CalibratorData) -> Result<StepResult> {
+    fn step(
+        &mut self,
+        data: &mut crate::common::CalibratorData,
+    ) -> Result<(StepResult, Option<CalibratorStatus>)> {
         let (space, mnd_space) = match self.space {
             xr::ReferenceSpaceType::STAGE => (&data.stage, mnd::ReferenceSpaceType::Stage),
             xr::ReferenceSpaceType::LOCAL => (&data.local, mnd::ReferenceSpaceType::Local),
@@ -80,11 +68,12 @@ impl Calibrator for RecenterMethod {
             .context("Unable to locate VIEW")?;
 
         let Ok(hmd) = loc.into_transformd() else {
-            if let Some(spinner) = self.spinner.as_mut() {
-                spinner.set_message("Device(s) not tracking.");
-                spinner.tick();
-            }
-            return Ok(StepResult::Continue);
+            return Ok((
+                StepResult::Continue,
+                Some(CalibratorStatus::Spinner {
+                    message: String::from("Device(s) not tracking."),
+                }),
+            ));
         };
 
         let current = TransformD::from(data.monado.get_reference_space_offset(mnd_space)?);
@@ -115,7 +104,7 @@ impl Calibrator for RecenterMethod {
             .set_reference_space_offset(mnd_space, new_reference.into())
             .context("Unable to set reference space offset")?;
 
-        Ok(StepResult::End)
+        Ok((StepResult::End, None))
     }
     fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {
         Ok(())

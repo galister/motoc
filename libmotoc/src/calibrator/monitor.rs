@@ -7,7 +7,7 @@ use openxr::{SpaceLocationFlags, SpaceVelocityFlags};
 
 use crate::error::{Error, ResultExt};
 
-use super::{Calibrator, StepResult};
+use super::{Calibrator, CalibratorStatus, StepResult};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -30,11 +30,7 @@ impl Monitor {
 }
 
 impl Calibrator for Monitor {
-    fn init(
-        &mut self,
-        _: &mut crate::common::CalibratorData,
-        _: &mut indicatif::MultiProgress,
-    ) -> Result<super::StepResult> {
+    fn init(&mut self, _: &mut crate::common::CalibratorData) -> Result<super::StepResult> {
         alternative_screen_enter();
         Ok(StepResult::Continue)
     }
@@ -42,7 +38,7 @@ impl Calibrator for Monitor {
     fn step(
         &mut self,
         data: &mut crate::common::CalibratorData,
-    ) -> Result<super::StepResult> {
+    ) -> Result<(StepResult, Option<CalibratorStatus>)> {
         print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
         let stage = data
             .monado
@@ -56,7 +52,7 @@ impl Calibrator for Monitor {
             stage.position.x, stage.position.y, stage.position.z
         );
         let space = " ".repeat(30 - pos.len().min(35));
-        println!("       {pos} {space} Yaw: {yaw:.2}, Pitch: {pitch:.2}, Roll: {roll:.2}");
+        println!("       {pos} {space} Yaw: {yaw:.2}, Pitch: {pitch:.2}, Roll: {roll:.2}");
 
         println!("\n{}", "[LOCAL] Reference".bright_blue());
         let local = data
@@ -70,7 +66,7 @@ impl Calibrator for Monitor {
             local.position.x, local.position.y, local.position.z
         );
         let space = " ".repeat(30 - pos.len().min(35));
-        println!("       {pos} {space} Yaw: {yaw:.2}, Pitch: {pitch:.2}, Roll: {roll:.2}");
+        println!("       {pos} {space} Yaw: {yaw:.2}, Pitch: {pitch:.2}, Roll: {roll:.2}");
 
         for to in data.tracking_origins.iter() {
             let display_name = if to.name.is_empty() {
@@ -93,7 +89,7 @@ impl Calibrator for Monitor {
                     pose.position.x, pose.position.y, pose.position.z
                 );
                 let space = " ".repeat(30 - pos.len().min(35));
-                println!(" │     {pos} {space} Yaw: {yaw:.2}, Pitch: {pitch:.2}, Roll: {roll:.2}");
+                println!(" │    {pos} {space} Yaw: {yaw:.2}, Pitch: {pitch:.2}, Roll: {roll:.2}");
             }
 
             let to_devs = data
@@ -184,7 +180,7 @@ impl Calibrator for Monitor {
                     )
                 };
 
-                println!(" {branch2}     {pos} {space} {rot}");
+                println!(" {branch2}     {pos} {space} {rot}");
 
                 let speed = {
                     let v32: mint::Vector3<f32> = vel.linear_velocity.into();
@@ -237,7 +233,7 @@ impl Calibrator for Monitor {
             }
         }
 
-        Ok(StepResult::Continue)
+        Ok((StepResult::Continue, None))
     }
     fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {
         alternative_screen_leave();

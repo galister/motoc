@@ -5,7 +5,6 @@ edition = "2021"
 description = "Monado Tracking Origin Calibrator library"
 
 [dependencies]
-indicatif.workspace = true
 libmonado.workspace = true
 log.workspace = true
 nalgebra.workspace = true

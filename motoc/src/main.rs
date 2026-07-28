@@ -10,15 +10,18 @@ use std::{
 use anyhow::Context;
 use clap::Parser;
 use env_logger::Env;
-use indicatif::MultiProgress;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use libmonado::{self as mnd, DeviceLogic};
 use nalgebra::{Quaternion, Rotation3, UnitQuaternion};
 use openxr as xr;
 use openxr_mndx_xdev_space::SessionXDevExtensionMNDX;
 
-use libmotoc::{Calibrator, FloorMethod, Monitor, OffsetMethod, RecenterMethod, SampledMethod, StepResult};
-use libmotoc::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use libmotoc::TransformD;
+use libmotoc::{vec3, CalibratorData, Device, OffsetType, UNIT};
+use libmotoc::{
+    Calibrator, CalibratorStatus, FloorMethod, Monitor, OffsetMethod, RecenterMethod,
+    SampledMethod, StepResult,
+};
 
 mod logbridge;
 
@@ -76,7 +79,6 @@ fn main() -> ExitCode {
 
     if let Err(e) = xr_loop(args, monado, status) {
         log::error!("{:?}", e);
-        // return;
     }
 
     ExitCode::SUCCESS
@@ -288,6 +290,37 @@ fn handle_non_xr_subcommands(args: &Args, monado: &mnd::Monado) -> anyhow::Resul
     }
 }
 
+fn update_status(status: &mut MultiProgress, cal_status: Option<&CalibratorStatus>) {
+    match cal_status {
+        Some(CalibratorStatus::Spinner { message }) => {
+            status.clear().ok();
+            let spinner = status.add(ProgressBar::new_spinner());
+            spinner.set_style(ProgressStyle::default_spinner().tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"));
+            spinner.set_message(message.clone());
+            spinner.tick();
+        }
+        Some(CalibratorStatus::Progress {
+            current,
+            max,
+            message,
+        }) => {
+            status.clear().ok();
+            let pb = status.add(ProgressBar::new(*max));
+            pb.set_style(
+                ProgressStyle::with_template("{spinner:.green} {wide_bar} {pos}/{len} {msg}")
+                    .unwrap()
+                    .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
+            );
+            pb.set_position(*current);
+            pb.set_message(message.clone());
+            pb.tick();
+        }
+        None => {
+            status.clear().ok();
+        }
+    }
+}
+
 fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow::Result<()> {
     let (instance, system) = libmotoc::xr_init()?;
 
@@ -328,7 +361,7 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                             Subcommands::Monitor => {
                                 calibrator = Some(Box::new({
                                     let mut c = Monitor::new();
-                                    c.init(&mut data, &mut status)?;
+                                    c.init(&mut data)?;
                                     c
                                 }));
                             }
@@ -371,7 +404,7 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                                         vec3(x.unwrap_or(0.0), y.unwrap_or(0.0), z.unwrap_or(0.0)),
                                         lerp,
                                     );
-                                    c.init(&mut data, &mut status)?;
+                                    c.init(&mut data)?;
                                     c
                                 }));
                             }
@@ -406,7 +439,7 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                                         samples.unwrap_or(500),
                                         profile.clone(),
                                     );
-                                    c.init(&mut data, &mut status)?;
+                                    c.init(&mut data)?;
                                     c
                                 }));
                             }
@@ -473,7 +506,7 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                                                 last.offset,
                                                 0.02,
                                             );
-                                            c.init(&mut data, &mut status)?;
+                                            c.init(&mut data)?;
                                             c
                                         }));
                                     }
@@ -482,14 +515,14 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                             Subcommands::Floor => {
                                 calibrator = Some(Box::new({
                                     let mut c = FloorMethod::new(&session)?;
-                                    c.init(&mut data, &mut status)?;
+                                    c.init(&mut data)?;
                                     c
                                 }));
                             }
                             Subcommands::Recenter { ref id, ref height } => {
                                 calibrator = Some(Box::new({
                                     let mut c = RecenterMethod::new(id, height)?;
-                                    c.init(&mut data, &mut status)?;
+                                    c.init(&mut data)?;
                                     c
                                 }))
                             }
@@ -531,17 +564,17 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                 log::info!("Received shutdown signal.");
                 break 'main_loop;
             }
-            match cal.step(data)? {
+            let (step_result, cal_status) = cal.step(data)?;
+            update_status(&mut status, cal_status.as_ref());
+            match step_result {
                 StepResult::End => {
                     status.clear()?;
                     log::info!("Our work here is done! ✅");
-                    //TODO: have some interactibility
-                    // calibrator = None;
                     break 'main_loop;
                 }
                 StepResult::Replace(mut new_calibrator) => {
                     status.clear()?;
-                    new_calibrator.init(data, &mut status)?;
+                    new_calibrator.init(data)?;
                     calibrator = Some(new_calibrator);
                 }
                 StepResult::Continue => {}

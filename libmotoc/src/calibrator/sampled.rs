@@ -1,10 +1,9 @@
-use indicatif::{MultiProgress, ProgressBar};
 use nalgebra::{Dyn, Matrix3, OMatrix, Rotation3, RowVector3, UnitQuaternion, Vector3, U1, U3};
 
 use libmonado as mnd;
 
 use crate::{
-    calibrator::{OffsetMethod, StepResult},
+    calibrator::{CalibratorStatus, OffsetMethod, StepResult},
     common::OffsetType,
     error::{Error, ResultExt},
     helpers_xr::SpaceLocationConvert,
@@ -74,7 +73,6 @@ pub struct SampledMethod {
     samples: Vec<Sample>,
     maintain: bool,
     num_samples: usize,
-    progress: Option<ProgressBar>,
     profile: String,
 }
 
@@ -92,7 +90,6 @@ impl SampledMethod {
             samples: Vec::with_capacity(1000),
             maintain,
             num_samples: samples as _,
-            progress: None,
             profile,
         }
     }
@@ -254,36 +251,32 @@ impl SampledMethod {
 }
 
 impl Calibrator for SampledMethod {
-    fn init(
-        &mut self,
-        _: &mut crate::common::CalibratorData,
-        status: &mut MultiProgress,
-    ) -> Result<StepResult> {
-        status.clear().context("Unable to clear state")?;
-        self.progress = Some(status.add(ProgressBar::new(self.num_samples as _)));
-
+    fn init(&mut self, _: &mut crate::common::CalibratorData) -> Result<StepResult> {
         log::info!("Move the two devices together!");
 
         Ok(StepResult::Continue)
     }
 
-    fn step(&mut self, data: &mut crate::common::CalibratorData) -> Result<StepResult> {
+    fn step(
+        &mut self,
+        data: &mut crate::common::CalibratorData,
+    ) -> Result<(StepResult, Option<CalibratorStatus>)> {
         if self.samples.len() < self.num_samples {
             let _ = self.collect_samples(data);
 
-            if let Some(progress) = self.progress.as_mut() {
-                progress.set_message("Collecting samples...");
-                progress.set_position(self.samples.len() as _);
-                progress.tick();
-            }
-
-            return Ok(StepResult::Continue);
+            return Ok((
+                StepResult::Continue,
+                Some(CalibratorStatus::Progress {
+                    current: self.samples.len() as u64,
+                    max: self.num_samples as u64,
+                    message: String::from("Collecting samples..."),
+                }),
+            ));
         }
 
-        if let Some(progress) = self.progress.as_mut() {
-            progress.set_message("Calculating...");
-            progress.tick();
-        }
+        let _status = CalibratorStatus::Spinner {
+            message: String::from("Calculating..."),
+        };
 
         // sampling done, calculate
         let rot = self.calibrate_rotation();
@@ -301,7 +294,7 @@ impl Calibrator for SampledMethod {
             dst_origin
                 .set_offset(TransformD::default().into())
                 .context("Unable to set DST origin offset")?;
-            return Ok(StepResult::Continue);
+            return Ok((StepResult::Continue, None));
         }
 
         let offset = TransformD {
@@ -337,12 +330,15 @@ impl Calibrator for SampledMethod {
                 Err(e) => log::warn!("Could not save calibration: {}", e),
             }
 
-            Ok(StepResult::Replace(Box::new(OffsetMethod::new_internal(
-                self.src_dev,
-                self.dst_dev,
-                offset,
-                0.02,
-            ))))
+            Ok((
+                StepResult::Replace(Box::new(OffsetMethod::new_internal(
+                    self.src_dev,
+                    self.dst_dev,
+                    offset,
+                    0.02,
+                ))),
+                None,
+            ))
         } else {
             let src_origin = data
                 .get_device_origin(self.src_dev)
@@ -365,7 +361,7 @@ impl Calibrator for SampledMethod {
                 Err(e) => log::warn!("Could not save calibration: {}", e),
             }
 
-            Ok(StepResult::End)
+            Ok((StepResult::End, None))
         }
     }
     fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {

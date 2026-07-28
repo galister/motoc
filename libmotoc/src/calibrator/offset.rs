@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use nalgebra::{Rotation3, Vector3};
 
 use crate::{
@@ -11,7 +10,7 @@ use crate::{
 
 use libmonado as mnd;
 
-use super::{Calibrator, StepResult};
+use super::{Calibrator, CalibratorStatus, StepResult};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -22,7 +21,6 @@ pub struct OffsetMethod {
     target_offset: TransformD,
     lerp_factor: f64,
     lerp_override_frames: u32,
-    spinner: Option<ProgressBar>,
     anomaly_start: Option<Instant>,
     last_pos_a: Vector3<f64>,
 }
@@ -35,7 +33,6 @@ impl OffsetMethod {
             target_offset: offset,
             lerp_factor,
             lerp_override_frames: 0,
-            spinner: None,
             anomaly_start: None,
             last_pos_a: Vector3::from_element(-1_000_000f64),
         }
@@ -62,7 +59,6 @@ impl OffsetMethod {
             },
             lerp_factor,
             lerp_override_frames: 0,
-            spinner: None,
             anomaly_start: None,
             last_pos_a: Vector3::from_element(-1_000_000f64),
         }
@@ -70,17 +66,7 @@ impl OffsetMethod {
 }
 
 impl Calibrator for OffsetMethod {
-    fn init(
-        &mut self,
-        data: &mut crate::common::CalibratorData,
-        status: &mut MultiProgress,
-    ) -> Result<StepResult> {
-        status.clear().context("Unable to clear status")?;
-        let spinner = status.add(ProgressBar::new_spinner());
-        spinner.set_style(ProgressStyle::default_spinner().tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"));
-
-        self.spinner = Some(spinner);
-
+    fn init(&mut self, data: &mut crate::common::CalibratorData) -> Result<StepResult> {
         log::info!(
             "Device A: {} ({})",
             data.devices[self.device_a].serial,
@@ -97,7 +83,10 @@ impl Calibrator for OffsetMethod {
         Ok(StepResult::Continue)
     }
 
-    fn step(&mut self, data: &mut crate::common::CalibratorData) -> Result<StepResult> {
+    fn step(
+        &mut self,
+        data: &mut crate::common::CalibratorData,
+    ) -> Result<(StepResult, Option<CalibratorStatus>)> {
         let (a_loc, a_vel) = data.devices[self.device_a]
             .space
             .relate(&data.stage, data.now)
@@ -109,11 +98,12 @@ impl Calibrator for OffsetMethod {
             .context("Unable to locate device B")?;
 
         let [Ok(pose_a), Ok(pose_b)] = [a_loc.into_transformd(), b_loc.into_transformd()] else {
-            if let Some(spinner) = self.spinner.as_mut() {
-                spinner.set_message("Device(s) not tracking.");
-                spinner.tick();
-            }
-            return Ok(StepResult::Continue);
+            return Ok((
+                StepResult::Continue,
+                Some(CalibratorStatus::Spinner {
+                    message: String::from("Device(s) not tracking."),
+                }),
+            ));
         };
 
         // 0.25 m/s or 16 deg/s
@@ -122,11 +112,12 @@ impl Calibrator for OffsetMethod {
             || a_vel.effective_angular().norm_squared() > 0.4
             || b_vel.effective_angular().norm_squared() > 0.4
         {
-            if let Some(spinner) = self.spinner.as_mut() {
-                spinner.set_message("Device(s) moving too fast.");
-                spinner.tick();
-            }
-            return Ok(StepResult::Continue);
+            return Ok((
+                StepResult::Continue,
+                Some(CalibratorStatus::Spinner {
+                    message: String::from("Device(s) moving too fast."),
+                }),
+            ));
         }
 
         let stage = TransformD::from(
@@ -149,12 +140,6 @@ impl Calibrator for OffsetMethod {
 
         // devices are more than 100m from center → anomaly
         if pos_offset.norm_squared() > 10000.0 {
-            if let Some(spinner) = self.spinner.as_mut() {
-                // Tracker flew away
-                spinner.set_message("Anomaly detected...");
-                spinner.tick();
-            }
-
             // anomaly doesn't disappear within 5s → reset offset
             match self.anomaly_start {
                 Some(time) => {
@@ -170,19 +155,21 @@ impl Calibrator for OffsetMethod {
                 }
             }
 
-            return Ok(StepResult::Continue);
+            return Ok((
+                StepResult::Continue,
+                Some(CalibratorStatus::Spinner {
+                    message: String::from("Anomaly detected..."),
+                }),
+            ));
         } else {
             self.anomaly_start = None;
         }
 
-        if let Some(spinner) = self.spinner.as_mut() {
-            spinner.set_message(format!(
-                "Offset mode active. Deviation: {:.2}m {:.1}°",
-                delta_global.origin.norm(),
-                delta_global.basis.angle().to_degrees()
-            ));
-            spinner.tick();
-        }
+        let message = format!(
+            "Offset mode active. Deviation: {:.2}m {:.1}°",
+            delta_global.origin.norm(),
+            delta_global.basis.angle().to_degrees()
+        );
 
         let lerp_factor = if (pose_a.origin - self.last_pos_a).norm_squared() > 0.5 {
             log::info!("Tracking jump on device A, ignoring lerp factor.");
@@ -205,7 +192,10 @@ impl Calibrator for OffsetMethod {
         to_b.set_offset(offset.into())
             .context("Unable to set tracking origin B offset")?;
 
-        Ok(StepResult::Continue)
+        Ok((
+            StepResult::Continue,
+            Some(CalibratorStatus::Spinner { message }),
+        ))
     }
     fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {
         Ok(())

@@ -1,19 +1,16 @@
 use std::{mem::MaybeUninit, ptr};
 
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-
 use libmonado as mnd;
 use openxr as xr;
 
 use crate::error::{Error, ResultExt};
 
-use super::{Calibrator, StepResult};
+use super::{Calibrator, CalibratorStatus, StepResult};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 // sets the floor height using palms from hand tracking
 pub struct FloorMethod {
-    spinner: Option<ProgressBar>,
     hands: Vec<xr::HandTracker>,
     ext_hand_tracking: xr::raw::HandTrackingEXT,
 }
@@ -34,7 +31,6 @@ impl FloorMethod {
         }
 
         Ok(Self {
-            spinner: None,
             hands,
             ext_hand_tracking,
         })
@@ -42,19 +38,14 @@ impl FloorMethod {
 }
 
 impl Calibrator for FloorMethod {
-    fn init(
-        &mut self,
-        _data: &mut crate::common::CalibratorData,
-        status: &mut MultiProgress,
-    ) -> Result<StepResult> {
-        status.clear().context("Unable to clear status")?;
-        let spinner = status.add(ProgressBar::new_spinner());
-        spinner.set_style(ProgressStyle::default_spinner().tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"));
-
+    fn init(&mut self, _data: &mut crate::common::CalibratorData) -> Result<StepResult> {
         Ok(StepResult::Continue)
     }
 
-    fn step(&mut self, data: &mut crate::common::CalibratorData) -> Result<StepResult> {
+    fn step(
+        &mut self,
+        data: &mut crate::common::CalibratorData,
+    ) -> Result<(StepResult, Option<CalibratorStatus>)> {
         let mut lowest_y = f32::MAX;
         for hand in self.hands.iter() {
             unsafe {
@@ -97,14 +88,15 @@ impl Calibrator for FloorMethod {
             }
         }
 
-        if let Some(spinner) = self.spinner.as_mut() {
-            if lowest_y < 100.0 {
-                spinner.set_message("Running...");
-            } else {
-                spinner.set_message("Hands not tracking.");
+        let status = if lowest_y < 100.0 {
+            CalibratorStatus::Spinner {
+                message: String::from("Running..."),
             }
-            spinner.tick();
-        }
+        } else {
+            CalibratorStatus::Spinner {
+                message: String::from("Hands not tracking."),
+            }
+        };
 
         if lowest_y < 0.0 {
             let mut stage = data
@@ -118,7 +110,7 @@ impl Calibrator for FloorMethod {
                 .context("Unable to set reference offset")?;
         }
 
-        Ok(StepResult::Continue)
+        Ok((StepResult::Continue, Some(status)))
     }
     fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {
         Ok(())
