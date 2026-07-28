@@ -3,7 +3,6 @@ resolver = "2"
 members = ["libmotoc", "motoc"]
 
 [workspace.dependencies]
-anyhow = "1.0"
 indicatif = "0.18"
 libmonado = "1.6"
 log = "0.4"

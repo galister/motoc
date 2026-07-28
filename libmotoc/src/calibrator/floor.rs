@@ -1,12 +1,15 @@
 use std::{mem::MaybeUninit, ptr};
 
-use anyhow::Context;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 use libmonado as mnd;
 use openxr as xr;
 
+use crate::error::{Error, ResultExt};
+
 use super::{Calibrator, StepResult};
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 // sets the floor height using palms from hand tracking
 pub struct FloorMethod {
@@ -16,11 +19,11 @@ pub struct FloorMethod {
 }
 
 impl FloorMethod {
-    pub fn new<G>(session: &xr::Session<G>) -> anyhow::Result<Self> {
+    pub fn new<G>(session: &xr::Session<G>) -> Result<Self> {
         let mut hands = Vec::with_capacity(2);
 
         let Some(ext_hand_tracking) = session.instance().exts().ext_hand_tracking else {
-            anyhow::bail!("EXT_hand_tracking not available!");
+            return Err(Error::MissingExtension("EXT_hand_tracking"));
         };
 
         for h in [xr::HandEXT::LEFT, xr::HandEXT::RIGHT] {
@@ -43,7 +46,7 @@ impl Calibrator for FloorMethod {
         &mut self,
         _data: &mut crate::common::CalibratorData,
         status: &mut MultiProgress,
-    ) -> anyhow::Result<StepResult> {
+    ) -> Result<StepResult> {
         status.clear().context("Unable to clear status")?;
         let spinner = status.add(ProgressBar::new_spinner());
         spinner.set_style(ProgressStyle::default_spinner().tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"));
@@ -51,7 +54,7 @@ impl Calibrator for FloorMethod {
         Ok(StepResult::Continue)
     }
 
-    fn step(&mut self, data: &mut crate::common::CalibratorData) -> anyhow::Result<StepResult> {
+    fn step(&mut self, data: &mut crate::common::CalibratorData) -> Result<StepResult> {
         let mut lowest_y = f32::MAX;
         for hand in self.hands.iter() {
             unsafe {
@@ -77,8 +80,7 @@ impl Calibrator for FloorMethod {
                     (self.ext_hand_tracking.locate_hand_joints)(hand.as_raw(), &info, &mut result);
 
                 if res != xr::sys::Result::SUCCESS {
-                    let err: xr::Result<()> = xr::Result::Err(res);
-                    anyhow::bail!("Failed to locate hand joints: {:?}", err);
+                    return Err(Error::HandJointLocation(res));
                 }
 
                 let loc: &xr::HandJointLocationEXT =
@@ -118,7 +120,7 @@ impl Calibrator for FloorMethod {
 
         Ok(StepResult::Continue)
     }
-    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {
         Ok(())
     }
 }

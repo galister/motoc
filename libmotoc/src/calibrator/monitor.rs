@@ -1,12 +1,15 @@
 use std::f32::consts::PI;
 
-use anyhow::Context;
 use colored::{Color, Colorize};
 use libmonado::{self as mnd, DeviceLogic};
 use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use openxr::{SpaceLocationFlags, SpaceVelocityFlags};
 
+use crate::error::{Error, ResultExt};
+
 use super::{Calibrator, StepResult};
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 const TICKER_SIZE: usize = 10;
 
@@ -31,7 +34,7 @@ impl Calibrator for Monitor {
         &mut self,
         _: &mut crate::common::CalibratorData,
         _: &mut indicatif::MultiProgress,
-    ) -> anyhow::Result<super::StepResult> {
+    ) -> Result<super::StepResult> {
         alternative_screen_enter();
         Ok(StepResult::Continue)
     }
@@ -39,7 +42,7 @@ impl Calibrator for Monitor {
     fn step(
         &mut self,
         data: &mut crate::common::CalibratorData,
-    ) -> anyhow::Result<super::StepResult> {
+    ) -> Result<super::StepResult> {
         print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
         let stage = data
             .monado
@@ -236,7 +239,7 @@ impl Calibrator for Monitor {
 
         Ok(StepResult::Continue)
     }
-    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {
         alternative_screen_leave();
         Ok(())
     }

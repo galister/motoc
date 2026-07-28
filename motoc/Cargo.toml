@@ -7,7 +7,7 @@ description = "Monado Tracking Origin Calibrator"
 [dependencies]
 libmotoc = { path = "../libmotoc" }
 
-anyhow.workspace = true
+anyhow = "1.0"
 indicatif.workspace = true
 libmonado.workspace = true
 log.workspace = true

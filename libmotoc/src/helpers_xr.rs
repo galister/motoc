@@ -4,26 +4,30 @@ use nalgebra::Vector3;
 use openxr::{self as xr};
 use openxr_mndx_xdev_space::XR_MNDX_XDEV_SPACE_EXTENSION_NAME;
 
+use crate::error::Error;
 use crate::transformd::TransformD;
 
-pub fn xr_init() -> anyhow::Result<(xr::Instance, xr::SystemId)> {
+pub type Result<T> = std::result::Result<T, Error>;
+
+pub fn xr_init() -> Result<(xr::Instance, xr::SystemId)> {
     let entry = xr::Entry::linked();
 
     let Ok(available_extensions) = entry.enumerate_extensions() else {
-        anyhow::bail!("Failed to enumerate OpenXR extensions.");
+        return Err(Error::Context(
+            "Failed to enumerate OpenXR extensions".into(),
+            Box::new(Error::Xr(xr::sys::Result::ERROR_INITIALIZATION_FAILED)),
+        ));
     };
 
-    anyhow::ensure!(
-        available_extensions.mnd_headless,
-        "Missing MND_headless extension."
-    );
+    if !available_extensions.mnd_headless {
+        return Err(Error::MissingExtension("MND_headless"));
+    }
 
     let xdev_ext_name = CString::from_str(XR_MNDX_XDEV_SPACE_EXTENSION_NAME)?.into_bytes_with_nul();
 
-    anyhow::ensure!(
-        available_extensions.other.contains(&xdev_ext_name),
-        "Missing MNDX_xdev_space extension."
-    );
+    if !available_extensions.other.contains(&xdev_ext_name) {
+        return Err(Error::MissingExtension("MNDX_xdev_space"));
+    }
 
     let mut enabled_extensions = xr::ExtensionSet::default();
     enabled_extensions.mnd_headless = true;
@@ -34,49 +38,62 @@ pub fn xr_init() -> anyhow::Result<(xr::Instance, xr::SystemId)> {
         enabled_extensions.ext_hand_tracking = true;
     }
 
-    let Ok(instance) = entry.create_instance(
-        &xr::ApplicationInfo {
-            api_version: xr::Version::new(1, 0, 0),
-            application_name: "motoc",
-            application_version: 0,
-            engine_name: "motoc",
-            engine_version: 0,
-        },
-        &enabled_extensions,
-        &[],
-    ) else {
-        anyhow::bail!("Failed to create OpenXR instance.");
-    };
+    let instance = entry
+        .create_instance(
+            &xr::ApplicationInfo {
+                api_version: xr::Version::new(1, 0, 0),
+                application_name: "motoc",
+                application_version: 0,
+                engine_name: "motoc",
+                engine_version: 0,
+            },
+            &enabled_extensions,
+            &[],
+        )
+        .map_err(|e| {
+            Error::Context(
+                "Failed to create OpenXR instance".into(),
+                Box::new(e.into()),
+            )
+        })?;
 
-    let Ok(instance_props) = instance.properties() else {
-        anyhow::bail!("Failed to query OpenXR instance properties.");
-    };
+    let instance_props = instance.properties().map_err(|e| {
+        Error::Context(
+            "Failed to query OpenXR instance properties".into(),
+            Box::new(e.into()),
+        )
+    })?;
     log::info!(
         "Using OpenXR runtime: {} {}",
         instance_props.runtime_name,
         instance_props.runtime_version
     );
 
-    let Ok(system) = instance.system(xr::FormFactor::HEAD_MOUNTED_DISPLAY) else {
-        anyhow::bail!("Failed to access OpenXR HMD system.");
-    };
+    let system = instance
+        .system(xr::FormFactor::HEAD_MOUNTED_DISPLAY)
+        .map_err(|e| {
+            Error::Context(
+                "Failed to access OpenXR HMD system".into(),
+                Box::new(e.into()),
+            )
+        })?;
 
     Ok((instance, system))
 }
 
 pub trait SpaceLocationConvert {
-    fn into_transformd(self) -> anyhow::Result<TransformD>;
+    fn into_transformd(self) -> Result<TransformD>;
 }
 
 impl SpaceLocationConvert for xr::SpaceLocation {
-    fn into_transformd(self) -> anyhow::Result<TransformD> {
+    fn into_transformd(self) -> Result<TransformD> {
         if !self.location_flags.contains(
             xr::SpaceLocationFlags::POSITION_TRACKED
                 | xr::SpaceLocationFlags::POSITION_VALID
                 | xr::SpaceLocationFlags::ORIENTATION_TRACKED
                 | xr::SpaceLocationFlags::ORIENTATION_VALID,
         ) {
-            anyhow::bail!("device not tracked");
+            return Err(Error::DeviceNotTracked);
         }
 
         Ok(self.pose.into())

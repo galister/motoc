@@ -12,6 +12,9 @@ pub use recenter::RecenterMethod;
 pub use sampled::SampledMethod;
 
 use crate::common::CalibratorData;
+use crate::error::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 pub enum StepResult {
     // Continue running the current instance
@@ -27,8 +30,8 @@ pub trait Calibrator {
         &mut self,
         data: &mut CalibratorData,
         status: &mut MultiProgress,
-    ) -> anyhow::Result<StepResult>;
+    ) -> Result<StepResult>;
 
-    fn step(&mut self, data: &mut CalibratorData) -> anyhow::Result<StepResult>;
-    fn finish(&mut self, data: &mut CalibratorData) -> anyhow::Result<()>;
+    fn step(&mut self, data: &mut CalibratorData) -> Result<StepResult>;
+    fn finish(&mut self, data: &mut CalibratorData) -> Result<()>;
 }

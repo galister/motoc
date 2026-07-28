@@ -1,13 +1,19 @@
-use anyhow::Context;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 use libmonado as mnd;
 use nalgebra::Rotation3;
 use openxr as xr;
 
-use crate::{common::UNIT, helpers_xr::SpaceLocationConvert, transformd::TransformD};
+use crate::{
+    common::UNIT,
+    error::{Error, ResultExt},
+    helpers_xr::SpaceLocationConvert,
+    transformd::TransformD,
+};
 
 use super::{Calibrator, StepResult};
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 enum HeightMode {
     Normal,
@@ -23,11 +29,11 @@ pub struct RecenterMethod {
 }
 
 impl RecenterMethod {
-    pub fn new(space: &str, height: &Option<String>) -> anyhow::Result<Self> {
+    pub fn new(space: &str, height: &Option<String>) -> Result<Self> {
         let space = match space.to_lowercase().as_str() {
             "stage" => xr::ReferenceSpaceType::STAGE,
             "local" => xr::ReferenceSpaceType::LOCAL,
-            _ => anyhow::bail!("Can only recenter spaces LOCAL and STAGE!"),
+            _ => return Err(Error::InvalidRecenterSpace(space.to_string())),
         };
 
         let height_mode = match height {
@@ -54,7 +60,7 @@ impl Calibrator for RecenterMethod {
         &mut self,
         _data: &mut crate::common::CalibratorData,
         status: &mut MultiProgress,
-    ) -> anyhow::Result<StepResult> {
+    ) -> Result<StepResult> {
         status.clear().context("Unable to clear status")?;
         let spinner = status.add(ProgressBar::new_spinner());
         spinner.set_style(ProgressStyle::default_spinner().tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"));
@@ -62,7 +68,7 @@ impl Calibrator for RecenterMethod {
         Ok(StepResult::Continue)
     }
 
-    fn step(&mut self, data: &mut crate::common::CalibratorData) -> anyhow::Result<StepResult> {
+    fn step(&mut self, data: &mut crate::common::CalibratorData) -> Result<StepResult> {
         let (space, mnd_space) = match self.space {
             xr::ReferenceSpaceType::STAGE => (&data.stage, mnd::ReferenceSpaceType::Stage),
             xr::ReferenceSpaceType::LOCAL => (&data.local, mnd::ReferenceSpaceType::Local),
@@ -111,7 +117,7 @@ impl Calibrator for RecenterMethod {
 
         Ok(StepResult::End)
     }
-    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {
         Ok(())
     }
 }

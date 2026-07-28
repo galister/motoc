@@ -5,7 +5,10 @@ use nalgebra::{UnitVector3, Vector3};
 use openxr as xr;
 use serde::{Deserialize, Serialize};
 
+use crate::error::Error;
 use crate::transformd::TransformD;
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[inline(always)]
 #[allow(dead_code)]
@@ -74,12 +77,14 @@ impl<'a> CalibratorData<'a> {
         }
     }
 
-    pub fn get_device_origin(&self, device: usize) -> anyhow::Result<mnd::TrackingOrigin<'a>> {
+    pub fn get_device_origin(&self, device: usize) -> Result<mnd::TrackingOrigin<'a>> {
         let Some(device) = self.devices.get(device) else {
-            anyhow::bail!("no such device: {}", device);
+            return Err(Error::DeviceNotFound { device });
         };
         let Some(origin) = self.tracking_origins.get(device.tracking_origin as usize) else {
-            anyhow::bail!("no such tracking origin: {}", device.tracking_origin);
+            return Err(Error::TrackingOriginNotFound {
+                tracking_origin: device.tracking_origin,
+            });
         };
         Ok(origin.clone())
     }
@@ -91,11 +96,9 @@ impl<'a> CalibratorData<'a> {
         dst: usize,
         offset: TransformD,
         offset_type: OffsetType,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         let xdg_dirs = xdg::BaseDirectories::new();
-        let mut path = xdg_dirs
-            .get_config_home()
-            .ok_or_else(|| anyhow::anyhow!("No home dir"))?;
+        let mut path = xdg_dirs.get_config_home().ok_or(Error::NoHomeDir)?;
         path.push("motoc");
         if !path.exists() {
             std::fs::create_dir_all(&path)?;
@@ -125,11 +128,9 @@ impl<'a> CalibratorData<'a> {
         Ok(())
     }
 
-    pub fn load_calibration(&self, profile: &str) -> anyhow::Result<SavedCalibration> {
+    pub fn load_calibration(&self, profile: &str) -> Result<SavedCalibration> {
         let xdg_dirs = xdg::BaseDirectories::new();
-        let mut path = xdg_dirs
-            .get_config_home()
-            .ok_or_else(|| anyhow::anyhow!("No home dir"))?;
+        let mut path = xdg_dirs.get_config_home().ok_or(Error::NoHomeDir)?;
         path.push("motoc");
         path.push(format!("{}.json", profile));
 

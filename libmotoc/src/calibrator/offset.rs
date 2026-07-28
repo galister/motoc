@@ -1,10 +1,10 @@
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use nalgebra::{Rotation3, Vector3};
 
 use crate::{
+    error::{Error, ResultExt},
     helpers_xr::{EffectiveSpaceVelocity, SpaceLocationConvert},
     transformd::TransformD,
 };
@@ -12,6 +12,8 @@ use crate::{
 use libmonado as mnd;
 
 use super::{Calibrator, StepResult};
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 // maintains a constant, but smoothed offset between two selected devices
 pub struct OffsetMethod {
@@ -72,7 +74,7 @@ impl Calibrator for OffsetMethod {
         &mut self,
         data: &mut crate::common::CalibratorData,
         status: &mut MultiProgress,
-    ) -> anyhow::Result<StepResult> {
+    ) -> Result<StepResult> {
         status.clear().context("Unable to clear status")?;
         let spinner = status.add(ProgressBar::new_spinner());
         spinner.set_style(ProgressStyle::default_spinner().tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"));
@@ -95,7 +97,7 @@ impl Calibrator for OffsetMethod {
         Ok(StepResult::Continue)
     }
 
-    fn step(&mut self, data: &mut crate::common::CalibratorData) -> anyhow::Result<StepResult> {
+    fn step(&mut self, data: &mut crate::common::CalibratorData) -> Result<StepResult> {
         let (a_loc, a_vel) = data.devices[self.device_a]
             .space
             .relate(&data.stage, data.now)
@@ -205,7 +207,7 @@ impl Calibrator for OffsetMethod {
 
         Ok(StepResult::Continue)
     }
-    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {
         Ok(())
     }
 }

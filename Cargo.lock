@@ -528,7 +528,6 @@ dependencies = [
 name = "libmotoc"
 version = "0.3.6"
 dependencies = [
- "anyhow",
  "bindgen",
  "colored",
  "indicatif",

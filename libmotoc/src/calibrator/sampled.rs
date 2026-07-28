@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Context};
 use indicatif::{MultiProgress, ProgressBar};
 use nalgebra::{Dyn, Matrix3, OMatrix, Rotation3, RowVector3, UnitQuaternion, Vector3, U1, U3};
 
@@ -7,11 +6,14 @@ use libmonado as mnd;
 use crate::{
     calibrator::{OffsetMethod, StepResult},
     common::OffsetType,
+    error::{Error, ResultExt},
     helpers_xr::SpaceLocationConvert,
     transformd::TransformD,
 };
 
 use super::Calibrator;
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 struct DeltaRotSample {
     a: RowVector3<f64>,
@@ -95,7 +97,7 @@ impl SampledMethod {
         }
     }
 
-    fn collect_samples(&mut self, data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+    fn collect_samples(&mut self, data: &mut crate::common::CalibratorData) -> Result<()> {
         let new_a = data.devices[self.src_dev]
             .space
             .locate(&data.stage, data.now)
@@ -178,7 +180,7 @@ impl SampledMethod {
         Rotation3::from_matrix_unchecked(rot)
     }
 
-    fn calibrate_translation(&self, rot: &Rotation3<f64>) -> anyhow::Result<Vector3<f64>> {
+    fn calibrate_translation(&self, rot: &Rotation3<f64>) -> Result<Vector3<f64>> {
         let mut deltas = Vec::with_capacity(self.samples.len());
 
         for i in 0..self.samples.len() {
@@ -222,7 +224,7 @@ impl SampledMethod {
         coeffs
             .svd(true, true)
             .solve(&constants, f32::EPSILON as f64)
-            .map_err(|e| anyhow!(e))
+            .map_err(|_| Error::InvalidOperation)
     }
 
     fn avg_b_to_a_offset(&self, offset: &TransformD) -> TransformD {
@@ -256,7 +258,7 @@ impl Calibrator for SampledMethod {
         &mut self,
         _: &mut crate::common::CalibratorData,
         status: &mut MultiProgress,
-    ) -> anyhow::Result<StepResult> {
+    ) -> Result<StepResult> {
         status.clear().context("Unable to clear state")?;
         self.progress = Some(status.add(ProgressBar::new(self.num_samples as _)));
 
@@ -265,7 +267,7 @@ impl Calibrator for SampledMethod {
         Ok(StepResult::Continue)
     }
 
-    fn step(&mut self, data: &mut crate::common::CalibratorData) -> anyhow::Result<StepResult> {
+    fn step(&mut self, data: &mut crate::common::CalibratorData) -> Result<StepResult> {
         if self.samples.len() < self.num_samples {
             let _ = self.collect_samples(data);
 
@@ -366,7 +368,7 @@ impl Calibrator for SampledMethod {
             Ok(StepResult::End)
         }
     }
-    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> anyhow::Result<()> {
+    fn finish(&mut self, _data: &mut crate::common::CalibratorData) -> Result<()> {
         Ok(())
     }
 }
