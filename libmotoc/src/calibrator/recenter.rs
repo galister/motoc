@@ -77,20 +77,41 @@ impl Calibrator for RecenterMethod {
         };
 
         let current = TransformD::from(data.monado.get_reference_space_offset(mnd_space)?);
-        let mut hmd = current * hmd;
+        let mut stage_offset = current;
+
+        let horiz_hmd_pos = nalgebra::Vector3::new(hmd.origin.x, 0.0, hmd.origin.z);
 
         let fwd = hmd.basis * UNIT.NEG_ZU;
-        let yaw = fwd.x.atan2(-fwd.z);
-        hmd.basis = Rotation3::from_axis_angle(&UNIT.YU, yaw);
+        let horiz_len_sq = fwd.x * fwd.x + fwd.z * fwd.z;
 
-        let mut new_reference = hmd.inverse();
+        let hmd_yaw = if horiz_len_sq > f64::EPSILON {
+            let yaw = (-fwd.x).atan2(-fwd.z);
+            Rotation3::from_axis_angle(&UNIT.YU, yaw)
+        } else {
+            Rotation3::identity()
+        };
+
+        let recenter_offset = TransformD {
+            basis: hmd_yaw,
+            origin: horiz_hmd_pos,
+        };
+
+        stage_offset = stage_offset * recenter_offset;
+
+        let mut new_reference = TransformD::from(data.monado.get_reference_space_offset(mnd_space)?);
+        new_reference.origin.x = stage_offset.origin.x;
+        new_reference.origin.z = stage_offset.origin.z;
+
+        if horiz_len_sq > f64::EPSILON {
+            new_reference.basis = stage_offset.basis;
+        }
 
         match self.height_mode {
             HeightMode::Keep => {
                 new_reference.origin.y = current.origin.y;
             }
             HeightMode::Relative(h) => {
-                new_reference.origin.y = hmd.origin.y - h;
+                new_reference.origin.y = stage_offset.origin.y - h;
             }
             _ => {}
         }
