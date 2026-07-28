@@ -531,7 +531,6 @@ dependencies = [
  "anyhow",
  "bindgen",
  "colored",
- "env_logger",
  "indicatif",
  "libmonado",
  "log",
