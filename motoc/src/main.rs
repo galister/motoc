@@ -342,7 +342,9 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
     let mut session_running = false;
 
     let mut calibrator_data = None;
+    let mut tui = None;
     let mut calibrator: Option<Box<dyn Calibrator>> = None;
+    let mut calibrator_status = None;
 
     'main_loop: loop {
         'event_loop: while let Some(event) = instance.poll_event(&mut events)? {
@@ -362,11 +364,9 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
 
                         match args.command {
                             Subcommands::Monitor | Subcommands::Tui => {
-                                calibrator = Some(Box::new({
-                                    let mut c = Tui::new();
-                                    c.init(&mut data)?;
-                                    c
-                                }));
+                                let mut ui = Tui::new();
+                                ui.init()?;
+                                tui = Some(ui);
                             }
                             Subcommands::Offset {
                                 ref src,
@@ -560,29 +560,94 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
 
         session.sync_actions(&[(&actions).into()])?;
 
-        if let (Some(data), Some(cal)) = (calibrator_data.as_mut(), calibrator.as_mut()) {
+        if let Some(data) = calibrator_data.as_mut() {
             data.now = instance.now()?;
             if !RUNNING.load(Ordering::Relaxed) {
-                cal.finish(data)?;
+                if let Some(cal) = calibrator.as_mut() {
+                    cal.finish(data)?;
+                }
+                if let Some(ui) = tui.as_mut() {
+                    ui.finish()?;
+                }
                 log::info!("Received shutdown signal.");
                 break 'main_loop;
             }
-            let (step_result, cal_status) = cal.step(data)?;
-            update_status(&mut status, cal_status.as_ref());
-            match step_result {
-                StepResult::End => {
-                    status.clear()?;
-                    cal.finish(data)?;
-                    log::info!("Our work here is done! ✅");
-                    break 'main_loop;
+
+            let calibrator_result = if let Some(cal) = calibrator.as_mut() {
+                let (result, new_status) = cal.step(data)?;
+                calibrator_status = new_status;
+                Some(result)
+            } else {
+                calibrator_status = None;
+                None
+            };
+
+            if tui.is_none() {
+                update_status(&mut status, calibrator_status.as_ref());
+            }
+
+            if let Some(result) = calibrator_result {
+                match result {
+                    StepResult::End => {
+                        if tui.is_none() {
+                            status.clear()?;
+                        }
+                        if let Some(cal) = calibrator.as_mut() {
+                            cal.finish(data)?;
+                        }
+                        calibrator = None;
+                        calibrator_status = None;
+
+                        if let Some(ui) = tui.as_mut() {
+                            ui.set_status("Calibrator finished.");
+                        } else {
+                            log::info!("Our work here is done! ✅");
+                            break 'main_loop;
+                        }
+                    }
+                    StepResult::Replace(mut new_calibrator) => {
+                        if tui.is_none() {
+                            status.clear()?;
+                        }
+                        if let Some(cal) = calibrator.as_mut() {
+                            cal.finish(data)?;
+                        }
+                        new_calibrator.init(data)?;
+                        calibrator = Some(new_calibrator);
+                        calibrator_status = None;
+                    }
+                    StepResult::Continue => {}
                 }
-                StepResult::Replace(mut new_calibrator) => {
-                    status.clear()?;
-                    cal.finish(data)?;
-                    new_calibrator.init(data)?;
-                    calibrator = Some(new_calibrator);
+            }
+
+            let tui_result = if let Some(ui) = tui.as_mut() {
+                Some(ui.step(data, calibrator_status.as_ref())?)
+            } else {
+                None
+            };
+
+            if let Some(result) = tui_result {
+                match result {
+                    StepResult::End => {
+                        if let Some(cal) = calibrator.as_mut() {
+                            cal.finish(data)?;
+                        }
+                        if let Some(ui) = tui.as_mut() {
+                            ui.finish()?;
+                        }
+                        status.clear()?;
+                        break 'main_loop;
+                    }
+                    StepResult::Replace(mut new_calibrator) => {
+                        if let Some(cal) = calibrator.as_mut() {
+                            cal.finish(data)?;
+                        }
+                        new_calibrator.init(data)?;
+                        calibrator = Some(new_calibrator);
+                        calibrator_status = None;
+                    }
+                    StepResult::Continue => {}
                 }
-                StepResult::Continue => {}
             }
         }
 

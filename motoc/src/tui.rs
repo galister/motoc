@@ -27,9 +27,7 @@ use ratatui::{
 
 use crate::{OffsetType, TransformD};
 
-use super::{
-    Calibrator, CalibratorStatus, OffsetMethod, RecenterMethod, SampledMethod, StepResult,
-};
+use super::{CalibratorStatus, OffsetMethod, RecenterMethod, SampledMethod, StepResult};
 
 pub type Result<T> = std::result::Result<T, libmotoc::Error>;
 
@@ -291,7 +289,11 @@ impl Tui {
         }
     }
 
-    fn draw(&mut self, data: &CalibratorData<'_>) -> Result<()> {
+    fn draw(
+        &mut self,
+        data: &CalibratorData<'_>,
+        calibrator_status: Option<&CalibratorStatus>,
+    ) -> Result<()> {
         self.hitboxes.clear();
 
         let screen = &self.screen;
@@ -311,6 +313,7 @@ impl Tui {
                         selected_command,
                         overview_scroll,
                         status,
+                        calibrator_status,
                         hitboxes,
                         overview_area,
                     )
@@ -465,6 +468,7 @@ impl Tui {
                 mut axis,
                 mut selected_delta,
             } => {
+                let mut executed = false;
                 match key.code {
                     KeyCode::Esc => {
                         self.screen = Screen::AdjustSelect { selected: 0 };
@@ -489,12 +493,15 @@ impl Tui {
                             -OFFSET_DELTAS[selected_delta].abs(),
                             data,
                         );
+                        executed = true;
                     }
                     KeyCode::Char('+') | KeyCode::Char('=') => {
                         self.apply_adjust(&target, axis, OFFSET_DELTAS[selected_delta].abs(), data);
+                        executed = true;
                     }
                     KeyCode::Enter | KeyCode::Char(' ') => {
                         self.apply_adjust(&target, axis, OFFSET_DELTAS[selected_delta], data);
+                        executed = true;
                     }
                     KeyCode::Char(ch @ '1'..='4') => {
                         let magnitude = ch as usize - '1' as usize;
@@ -506,10 +513,14 @@ impl Tui {
                     }
                     _ => {}
                 }
-                self.screen = Screen::AdjustEdit {
-                    target,
-                    axis,
-                    selected_delta,
+                self.screen = if executed {
+                    Screen::Dashboard
+                } else {
+                    Screen::AdjustEdit {
+                        target,
+                        axis,
+                        selected_delta,
+                    }
                 };
                 StepResult::Continue
             }
@@ -552,6 +563,7 @@ impl Tui {
                     KeyCode::Enter | KeyCode::Char(' ') => {
                         if let Some(target) = targets.get(selected) {
                             self.reset_target(target, data);
+                            self.screen = Screen::Dashboard;
                         }
                     }
                     _ => {}
@@ -649,15 +661,7 @@ impl Tui {
             MouseAction::AdjustDelta { axis, delta } => {
                 if let Screen::AdjustEdit { target, .. } = self.screen.clone() {
                     self.apply_adjust(&target, axis, delta, data);
-                    let selected_delta = OFFSET_DELTAS
-                        .iter()
-                        .position(|candidate| *candidate == delta)
-                        .unwrap_or(4);
-                    self.screen = Screen::AdjustEdit {
-                        target,
-                        axis,
-                        selected_delta,
-                    };
+                    self.screen = Screen::Dashboard;
                 }
                 StepResult::Continue
             }
@@ -665,6 +669,7 @@ impl Tui {
             MouseAction::Reset(index) => {
                 if let Some(target) = offset_targets(data).get(index) {
                     self.reset_target(target, data);
+                    self.screen = Screen::Dashboard;
                 }
                 StepResult::Continue
             }
@@ -675,7 +680,15 @@ impl Tui {
         self.status.clear();
         match command {
             0 => match continue_last_calibration(data) {
-                Ok(result) => result,
+                Ok(result) => {
+                    self.screen = Screen::Dashboard;
+                    self.status = if matches!(&result, StepResult::Replace(_)) {
+                        "Continuous calibration started.".into()
+                    } else {
+                        "Calibration applied.".into()
+                    };
+                    result
+                }
                 Err(message) => {
                     self.status = message;
                     StepResult::Continue
@@ -759,6 +772,8 @@ impl Tui {
             return StepResult::Continue;
         }
 
+        self.screen = Screen::Dashboard;
+        self.status = "Calibration started.".into();
         StepResult::Replace(Box::new(SampledMethod::new(
             form.source,
             form.target,
@@ -771,7 +786,11 @@ impl Tui {
     fn start_recenter(&mut self, space: SpaceKind) -> StepResult {
         let height = None;
         match RecenterMethod::new(space.argument(), &height) {
-            Ok(method) => StepResult::Replace(Box::new(method)),
+            Ok(method) => {
+                self.screen = Screen::Dashboard;
+                self.status = format!("Recentering {}.", space.name());
+                StepResult::Replace(Box::new(method))
+            }
             Err(error) => {
                 self.status = format!("Could not recenter {}: {error}", space.name());
                 StepResult::Continue
@@ -838,17 +857,17 @@ impl Drop for Tui {
     }
 }
 
-impl Calibrator for Tui {
-    fn init(&mut self, _: &mut CalibratorData<'_>) -> Result<StepResult> {
-        self.start_terminal()?;
-        Ok(StepResult::Continue)
+impl Tui {
+    pub fn init(&mut self) -> Result<()> {
+        self.start_terminal()
     }
 
-    fn step(
+    pub fn step(
         &mut self,
         data: &mut CalibratorData<'_>,
-    ) -> Result<(StepResult, Option<CalibratorStatus>)> {
-        self.draw(data)?;
+        calibrator_status: Option<&CalibratorStatus>,
+    ) -> Result<StepResult> {
+        self.draw(data, calibrator_status)?;
 
         while event::poll(Duration::ZERO).context("Unable to poll terminal input")? {
             let result = match event::read().context("Unable to read terminal input")? {
@@ -866,15 +885,19 @@ impl Calibrator for Tui {
             };
 
             if !matches!(result, StepResult::Continue) {
-                return Ok((result, None));
+                return Ok(result);
             }
         }
 
-        Ok((StepResult::Continue, None))
+        Ok(StepResult::Continue)
     }
 
-    fn finish(&mut self, _: &mut CalibratorData<'_>) -> Result<()> {
+    pub fn finish(&mut self) -> Result<()> {
         self.stop_terminal()
+    }
+
+    pub fn set_status(&mut self, status: impl Into<String>) {
+        self.status = status.into();
     }
 }
 
@@ -914,7 +937,7 @@ fn continue_last_calibration(
             target
                 .set_offset((last.offset * source).into())
                 .map_err(|error| format!("Could not apply calibration: {error}"))?;
-            Ok(StepResult::End)
+            Ok(StepResult::Continue)
         }
         OffsetType::Device => {
             let source = data
@@ -1029,6 +1052,7 @@ fn draw_ui(
     selected_command: usize,
     overview_scroll: u16,
     status: &str,
+    calibrator_status: Option<&CalibratorStatus>,
     hitboxes: &mut Vec<Hitbox>,
     overview_area: &mut Rect,
 ) {
@@ -1103,29 +1127,41 @@ fn draw_ui(
             "↑/↓ axis  ←/→ button  Enter apply  +/- apply sign  1..4 magnitude  Esc targets"
         }
     };
-    let footer = if status.is_empty() {
-        Line::from(Span::styled(help, Style::default().fg(Color::DarkGray)))
-    } else {
-        Line::from(vec![
-            Span::styled(
-                format!("{status}  "),
-                Style::default().fg(
-                    if status.starts_with("Could not")
-                        || status.starts_with("No such")
-                        || status.contains("must")
-                        || status.contains("needs")
-                    {
-                        Color::LightRed
-                    } else {
-                        Color::LightGreen
-                    },
-                ),
+    let mut footer = Vec::new();
+    if let Some(calibrator_status) = calibrator_status {
+        let text = match calibrator_status {
+            CalibratorStatus::Spinner { message } => format!("⠋ {message}"),
+            CalibratorStatus::Progress {
+                current,
+                max,
+                message,
+            } => format!("[{current}/{max}] {message}"),
+        };
+        footer.push(Span::styled(text, Style::default().fg(Color::LightCyan)));
+        footer.push(Span::raw("  "));
+    }
+    if !status.is_empty() {
+        footer.push(Span::styled(
+            format!("{status}  "),
+            Style::default().fg(
+                if status.starts_with("Could not")
+                    || status.starts_with("No such")
+                    || status.contains("must")
+                    || status.contains("needs")
+                {
+                    Color::LightRed
+                } else {
+                    Color::LightGreen
+                },
             ),
-            Span::styled(help, Style::default().fg(Color::DarkGray)),
-        ])
-    };
+        ));
+    }
+    footer.push(Span::styled(
+        help,
+        Style::default().fg(Color::DarkGray),
+    ));
     frame.render_widget(
-        Paragraph::new(footer)
+        Paragraph::new(Line::from(footer))
             .block(Block::default().borders(Borders::TOP))
             .alignment(Alignment::Left),
         outer[1],
