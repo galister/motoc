@@ -15,7 +15,7 @@ For Arch-based distros, AUR package `motoc-git` is available.
 Other distros, install via cargo:
 
 ```bash
-cargo install --git https://github.com/galister/motoc.git
+cargo install motoc
 ```
 
 Or via Homebrew ([AtomicXR tap](https://tangled.sh/@matrixfurry.com/homebrew-atomicxr)):
