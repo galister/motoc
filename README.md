@@ -1,5 +1,7 @@
 # Monado Tracking Origin Calibrator
 
+![Screenshot of motoc TUI](https://github.com/galister/motoc/blob/meta/tui.png?raw=true)
+
 This tool allows users to calibrate devices of different tracking origins (tracking technologies) to work together.
 
 You will need version 25.0 or newer of Monado/WiVRn.
