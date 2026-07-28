@@ -24,17 +24,27 @@ brew install motoc
 
 ## How to use
 
-- With Monado/WiVRn running, use `motoc monitor` to identify the devices you'll be calibrating with.
-- Note down the serial numbers (the part in double quotes) of the devices.
-- Start the calibration:
-  - `sleep 5; motoc calibrate --src "WiVRn HMD" --dst "LHR-ABCDE000"` (replace with your serials)
-  - Add `--continue` if the tracker will stay attached to your headset.
+### Graphical
+
+- With Monado/WiVRn running, run `motoc tui`.
+- Use ↓↑ and select to `Calibrate`.
+- Select source device (usually HMD) and target device (usually tracker).
+- Enable `Continuous mode` if the tracker will stay attached to your headset.
+- Select `Start`.
 - Move around so that the two devices move together in space.
   - If calibrating with a headset, hold the selected device firmly to the headset as you slowly walk around.
   - Avoid erratic movements.
   - If the calibration did not succeed, it will retry automatically.
 
-If the same tracker is attached to your headset the same way as last time, use `motoc continue` to re-use the last calibration.
+If the same tracker is attached to your headset the same way as last time, run `motoc continue` to re-use the last calibration.
+
+### CLI
+
+- Start the calibration:
+  - `sleep 5; motoc calibrate --src "WiVRn HMD" --dst "LHR-ABCDE000"` (replace with your serials)
+  - Add `--continue` if the tracker will stay attached to your headset.
+
+If the same tracker is attached to your headset the same way as last time, run `motoc continue` to re-use the last calibration.
 
 ## Calibration Tips
 
