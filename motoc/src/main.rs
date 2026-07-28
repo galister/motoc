@@ -51,8 +51,7 @@ impl<L: log::Log> log::Log for TuiLogger<L> {
             return;
         }
 
-        self.logs
-            .push(record.level(), &record.args().to_string());
+        self.logs.push(record.level(), &record.args().to_string());
         if !self.logs.is_active() {
             self.inner.log(record);
         }
@@ -358,9 +357,7 @@ fn update_status(
             if !matches!(status_bar.as_ref(), Some(CliStatusBar::Spinner(_))) {
                 clear_status(status, status_bar);
                 let spinner = status.add(ProgressBar::new_spinner());
-                spinner.set_style(
-                    ProgressStyle::default_spinner().tick_chars(SPINNER_TICK_CHARS),
-                );
+                spinner.set_style(ProgressStyle::default_spinner().tick_chars(SPINNER_TICK_CHARS));
                 *status_bar = Some(CliStatusBar::Spinner(spinner));
             }
 
@@ -379,11 +376,9 @@ fn update_status(
                 clear_status(status, status_bar);
                 let progress = status.add(ProgressBar::new(*max));
                 progress.set_style(
-                    ProgressStyle::with_template(
-                        "{spinner:.green} {wide_bar} {pos}/{len} {msg}",
-                    )
-                    .unwrap()
-                    .tick_chars(SPINNER_TICK_CHARS),
+                    ProgressStyle::with_template("{spinner:.green} {wide_bar} {pos}/{len} {msg}")
+                        .unwrap()
+                        .tick_chars(SPINNER_TICK_CHARS),
                 );
                 *status_bar = Some(CliStatusBar::Progress(progress));
             }

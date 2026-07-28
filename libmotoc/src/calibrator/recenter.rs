@@ -98,7 +98,8 @@ impl Calibrator for RecenterMethod {
 
         stage_offset = stage_offset * recenter_offset;
 
-        let mut new_reference = TransformD::from(data.monado.get_reference_space_offset(mnd_space)?);
+        let mut new_reference =
+            TransformD::from(data.monado.get_reference_space_offset(mnd_space)?);
         new_reference.origin.x = stage_offset.origin.x;
         new_reference.origin.z = stage_offset.origin.z;
 

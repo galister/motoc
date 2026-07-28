@@ -1162,7 +1162,7 @@ fn draw_ui(
 
     let right_panels = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(7), Constraint::Length(5)])
+        .constraints([Constraint::Min(7), Constraint::Length(10)])
         .split(panels[1]);
 
     match screen {
@@ -1840,11 +1840,7 @@ fn draw_offset_editor(
         let button_area = bounded_rect(controls, 0, y + 1, controls.width, 1);
         let labels = ["-10", "-1", "-.1", "-.01", "+.01", "+.1", "+1", "+10"];
         let buttons = split_evenly(button_area, OFFSET_DELTAS.len());
-        for ((button, delta), label) in buttons
-            .into_iter()
-            .zip(OFFSET_DELTAS)
-            .zip(labels)
-        {
+        for ((button, delta), label) in buttons.into_iter().zip(OFFSET_DELTAS).zip(labels) {
             let keyboard_selected = axis == selected_axis && delta == OFFSET_DELTAS[selected_delta];
             frame.render_widget(
                 Paragraph::new(label)
