@@ -5,6 +5,11 @@ members = ["libmotoc", "motoc"]
 [workspace.dependencies]
 libmonado = "1.6"
 log = "0.4"
+mint = { version = "0.5", features = ["serde"] }
 nalgebra = { version = "0.34", features = ["mint", "serde-serialize"] }
-openxr = { version = "0.21", features = ["linked", "mint"], default-features = false }
+openxr = {
+  version = "0.21",
+  default-features = false,
+  features = ["linked", "mint"]
+}
 openxr_mndx_xdev_space = "0.2.0"

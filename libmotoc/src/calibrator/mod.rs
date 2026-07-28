@@ -1,11 +1,9 @@
 mod floor;
-mod monitor;
 mod offset;
 mod recenter;
 mod sampled;
 
 pub use floor::FloorMethod;
-pub use monitor::Monitor;
 pub use offset::OffsetMethod;
 pub use recenter::RecenterMethod;
 pub use sampled::SampledMethod;

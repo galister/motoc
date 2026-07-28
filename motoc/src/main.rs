@@ -19,11 +19,14 @@ use openxr_mndx_xdev_space::SessionXDevExtensionMNDX;
 use libmotoc::TransformD;
 use libmotoc::{vec3, CalibratorData, Device, OffsetType, UNIT};
 use libmotoc::{
-    Calibrator, CalibratorStatus, FloorMethod, Monitor, OffsetMethod, RecenterMethod,
-    SampledMethod, StepResult,
+    Calibrator, CalibratorStatus, FloorMethod, OffsetMethod, RecenterMethod, SampledMethod,
+    StepResult,
 };
 
+use crate::tui::Tui;
+
 mod logbridge;
+mod tui;
 
 pub static RUNNING: AtomicBool = AtomicBool::new(true);
 
@@ -358,9 +361,9 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
                         let mut data = load_calibrator_data(&session, &monado)?;
 
                         match args.command {
-                            Subcommands::Monitor => {
+                            Subcommands::Monitor | Subcommands::Tui => {
                                 calibrator = Some(Box::new({
-                                    let mut c = Monitor::new();
+                                    let mut c = Tui::new();
                                     c.init(&mut data)?;
                                     c
                                 }));
@@ -569,11 +572,13 @@ fn xr_loop(args: Args, monado: mnd::Monado, mut status: MultiProgress) -> anyhow
             match step_result {
                 StepResult::End => {
                     status.clear()?;
+                    cal.finish(data)?;
                     log::info!("Our work here is done! ✅");
                     break 'main_loop;
                 }
                 StepResult::Replace(mut new_calibrator) => {
                     status.clear()?;
+                    cal.finish(data)?;
                     new_calibrator.init(data)?;
                     calibrator = Some(new_calibrator);
                 }
@@ -655,8 +660,10 @@ struct Args {
 enum Subcommands {
     /// Show available tracking origings and their devices
     Show,
-    /// Continuously monitor tracking origins and their devices
+    /// Deprecated, same as TUI
     Monitor,
+    /// Open the interactive terminal UI
+    Tui,
     /// Maintain a static offset between two devices
     Offset {
         /// the source device (usu. HMD)
