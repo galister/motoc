@@ -2,7 +2,7 @@
 
 ![Screenshot of motoc TUI](https://github.com/galister/motoc/blob/meta/tui.png?raw=true)
 
-This tool allows users to calibrate devices of different tracking origins (tracking technologies) to work together.
+This tool allows users to calibrate devices of different tracking origins (tracking technologies) to work together. It's also a useful tool for tweaking or adjusting your play spaces in various ways.
 
 You will need version 25.0 or newer of Monado/WiVRn.
 
