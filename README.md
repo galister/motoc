@@ -18,9 +18,9 @@ Other distros, install via cargo:
 cargo install motoc
 ```
 
-Or via Homebrew ([AtomicXR tap](https://tangled.sh/@matrixfurry.com/homebrew-atomicxr)):
+Or via Homebrew ([Homebrew-XR tap](https://tangled.org/matrixfurry.com/homebrew-xr)):
 ```bash
-brew tap matrixfurry.com/atomicxr https://tangled.sh/@matrixfurry.com/homebrew-atomicxr
+brew tap matrixfurry.com/xr https://tangled.org/did:plc:tnpscg53k2nexylmouhv4b5e
 brew install motoc
 ```
 
